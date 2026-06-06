@@ -77,6 +77,7 @@ type OrchestratorResponse struct {
 	Timestamp             time.Time      `json:"timestamp"`
 	Status                string         `json:"status"`
 	ChatID                int64          `json:"chat_id"`
+	Text                  string         `json:"text"`
 	Payload               map[string]any `json:"payload,omitempty"`
 	Error                 *ErrorDetail   `json:"error,omitempty"`
 }

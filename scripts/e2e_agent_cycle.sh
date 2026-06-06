@@ -73,4 +73,7 @@ fi
 
 echo "OK orchestrator.responses: $FINAL"
 echo "$FINAL" | grep -q '"status":"success"' || { echo "FAIL: expected success status"; exit 1; }
+echo "$FINAL" | grep -q '"text":' || { echo "FAIL: text field missing"; exit 1; }
+echo "$FINAL" | grep -q 'map\[' && { echo "FAIL: message looks like Go dump"; exit 1; }
+echo "$FINAL" | grep -q '"chat_id":1001' || { echo "FAIL: chat_id missing"; exit 1; }
 echo "==> E2E cycle passed"

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"redops/internal/agent"
+	"redops/internal/botfmt"
 	"redops/internal/kafka"
 	"redops/internal/tracker"
 )
@@ -143,10 +144,13 @@ func (h *Handler) sendOrchestratorResponse(ctx context.Context, req kafka.Orches
 
 	if agentResp.Status == "success" {
 		resp.Payload = agentResp.Payload
+		resp.Text = botfmt.FormatAgentResponse(agentResp)
 	} else if agentResp.Error != nil {
 		resp.Error = agentResp.Error
+		resp.Text = botfmt.FormatAgentResponse(agentResp)
 	} else {
 		resp.Error = &kafka.ErrorDetail{Code: "AGENT_ERROR", Message: "agent returned error status without details"}
+		resp.Text = botfmt.FormatAgentResponse(kafka.AgentResponse{Status: "error", Error: resp.Error})
 	}
 
 	partition, offset, err := h.orchestrator.Send(ctx, req.CorrelationID, resp)
@@ -173,6 +177,7 @@ func (h *Handler) sendTimeoutResponse(ctx context.Context, req kafka.Orchestrato
 			Code:    "AGENT_TIMEOUT",
 			Message: fmt.Sprintf("agent did not respond within %s", h.waitTimeout),
 		},
+		Text: botfmt.FormatTimeout(h.waitTimeout),
 	}
 
 	partition, offset, err := h.orchestrator.Send(ctx, req.CorrelationID, resp)

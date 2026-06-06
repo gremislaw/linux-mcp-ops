@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,6 +139,12 @@ func TestHandleActionIntentWithAgentResponse(t *testing.T) {
 	if orch.sent[0].Status != "success" {
 		t.Fatalf("unexpected status: %s", orch.sent[0].Status)
 	}
+	if orch.sent[0].Text == "" {
+		t.Fatal("expected non-empty text for bot")
+	}
+	if strings.Contains(orch.sent[0].Text, "map[") {
+		t.Fatalf("text looks like go dump: %q", orch.sent[0].Text)
+	}
 }
 
 func TestHandleActionIntentTimeout(t *testing.T) {
@@ -169,5 +176,8 @@ func TestHandleActionIntentTimeout(t *testing.T) {
 	}
 	if orch.sent[0].Status != "timeout" {
 		t.Fatalf("unexpected status: %s", orch.sent[0].Status)
+	}
+	if orch.sent[0].Text == "" {
+		t.Fatal("expected timeout text for bot")
 	}
 }

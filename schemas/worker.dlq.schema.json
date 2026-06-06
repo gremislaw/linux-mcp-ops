@@ -27,7 +27,7 @@
     },
     "original_topic": {
       "type": "string",
-      "enum": ["tg.requests", "worker.responses", "orchestrator.requests", "agent.requests"],
+      "enum": ["tg.requests", "worker.responses", "orchestrator.requests", "orchestrator.responses", "agent.requests", "agent.responses"],
       "description": "Топик, из которого пришло сообщение"
     },
     "original_partition": {

@@ -36,3 +36,7 @@ smoke-produce:
 
 smoke-consume:
 	./bin/kafka-smoke -mode consume
+
+fake-agent-response:
+	@test -n "$(CORR)" || (echo "Usage: make fake-agent-response CORR=<correlation_id>"; exit 1)
+	./scripts/fake_agent_response.sh $(CORR) 5

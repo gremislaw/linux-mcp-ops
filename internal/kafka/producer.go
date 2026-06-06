@@ -123,3 +123,19 @@ func NewAgentRequestProducer(brokers []string) (*Producer, error) {
 		Validate: ValidateAgentRequest,
 	})
 }
+
+func NewAgentResponseProducer(brokers []string) (*Producer, error) {
+	return NewProducer(ProducerConfig{
+		Brokers:  brokers,
+		Topic:    TopicAgentResponses,
+		Validate: ValidateAgentResponse,
+	})
+}
+
+func NewOrchestratorResponseProducer(brokers []string) (*Producer, error) {
+	return NewProducer(ProducerConfig{
+		Brokers:  brokers,
+		Topic:    TopicOrchestratorResponses,
+		Validate: ValidateOrchestratorResponse,
+	})
+}

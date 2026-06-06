@@ -59,3 +59,24 @@ type AgentRequest struct {
 	Prompt                string         `json:"prompt"`
 	Plan                  map[string]any `json:"plan"`
 }
+
+type AgentResponse struct {
+	ID              string         `json:"id"`
+	CorrelationID   string         `json:"correlation_id"`
+	AgentRequestID  string         `json:"agent_request_id"`
+	Timestamp       time.Time      `json:"timestamp"`
+	Status          string         `json:"status"`
+	Payload         map[string]any `json:"payload,omitempty"`
+	Error           *ErrorDetail   `json:"error,omitempty"`
+}
+
+type OrchestratorResponse struct {
+	ID                    string         `json:"id"`
+	CorrelationID         string         `json:"correlation_id"`
+	OrchestratorRequestID string         `json:"orchestrator_request_id"`
+	Timestamp             time.Time      `json:"timestamp"`
+	Status                string         `json:"status"`
+	ChatID                int64          `json:"chat_id"`
+	Payload               map[string]any `json:"payload,omitempty"`
+	Error                 *ErrorDetail   `json:"error,omitempty"`
+}

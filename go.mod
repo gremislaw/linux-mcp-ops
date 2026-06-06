@@ -6,6 +6,7 @@ require (
 	github.com/IBM/sarama v1.50.2
 	github.com/google/uuid v1.6.0
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
+	golang.org/x/sync v0.20.0
 )
 
 require (

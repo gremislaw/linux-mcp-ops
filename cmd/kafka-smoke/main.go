@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -11,9 +12,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 
 	"redops/internal/kafka"
 	"redops/internal/router"
+	"redops/internal/tracker"
 )
 
 func main() {
@@ -22,6 +25,7 @@ func main() {
 	brokers := flag.String("brokers", kafka.DefaultBootstrap, "Kafka bootstrap servers")
 	mode := flag.String("mode", "produce-orchestrator", "Mode: produce-orchestrator or consume")
 	intent := flag.String("intent", "execute", "Intent for produce-orchestrator mode")
+	correlationID := flag.String("correlation-id", "", "Optional fixed correlation_id for produce mode")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -29,11 +33,11 @@ func main() {
 
 	switch *mode {
 	case "produce", "produce-orchestrator":
-		if err := runProducer(ctx, *brokers, *intent); err != nil {
+		if err := runProducer(ctx, *brokers, *intent, *correlationID); err != nil {
 			log.Fatalf("produce failed: %v", err)
 		}
 	case "consume":
-		if err := runConsumer(ctx, *brokers); err != nil {
+		if err := runOrchestrator(ctx, *brokers); err != nil {
 			log.Fatalf("consume failed: %v", err)
 		}
 	default:
@@ -41,14 +45,18 @@ func main() {
 	}
 }
 
-func runProducer(ctx context.Context, brokers, intent string) error {
+func runProducer(ctx context.Context, brokers, intent, fixedCorrelationID string) error {
 	producer, err := kafka.NewOrchestratorRequestProducer([]string{brokers})
 	if err != nil {
 		return err
 	}
 	defer producer.Close()
 
-	correlationID := uuid.NewString()
+	correlationID := fixedCorrelationID
+	if correlationID == "" {
+		correlationID = uuid.NewString()
+	}
+
 	req := kafka.OrchestratorRequest{
 		ID:            uuid.NewString(),
 		CorrelationID: correlationID,
@@ -66,28 +74,45 @@ func runProducer(ctx context.Context, brokers, intent string) error {
 
 	fmt.Fprintf(os.Stderr, "sent to %s partition=%d offset=%d correlation_id=%s intent=%s\n",
 		kafka.TopicOrchestratorRequests, partition, offset, correlationID, intent)
+	fmt.Println(correlationID)
 	return nil
 }
 
-func runConsumer(ctx context.Context, brokers string) error {
-	dlq, err := kafka.NewDLQProducer([]string{brokers})
+func runOrchestrator(ctx context.Context, brokers string) error {
+	brokerList := []string{brokers}
+
+	dlq, err := kafka.NewDLQProducer(brokerList)
 	if err != nil {
 		return err
 	}
 	defer dlq.Close()
 
-	agentProducer, err := kafka.NewAgentRequestProducer([]string{brokers})
+	agentProducer, err := kafka.NewAgentRequestProducer(brokerList)
 	if err != nil {
 		return err
 	}
 	defer agentProducer.Close()
 
-	handler := router.NewHandler(router.StubClient{}, agentProducer)
+	orchestratorProducer, err := kafka.NewOrchestratorResponseProducer(brokerList)
+	if err != nil {
+		return err
+	}
+	defer orchestratorProducer.Close()
 
-	consumer, err := kafka.NewConsumer(kafka.ConsumerConfig{
-		Brokers:  []string{brokers},
+	requestTracker := tracker.New()
+	responseHandler := tracker.NewResponseHandler(requestTracker)
+
+	handler := router.NewHandler(router.HandlerConfig{
+		LLM:          router.StubClient{},
+		Agent:        agentProducer,
+		Orchestrator: orchestratorProducer,
+		Tracker:      requestTracker,
+	})
+
+	requestConsumer, err := kafka.NewConsumer(kafka.ConsumerConfig{
+		Brokers:  brokerList,
 		Topic:    kafka.TopicOrchestratorRequests,
-		GroupID:  "redops-router",
+		GroupID:  "redops-orchestrator",
 		DLQ:      dlq,
 		MaxRetry: 3,
 		Validate: kafka.ValidateOrchestratorRequest,
@@ -96,7 +121,27 @@ func runConsumer(ctx context.Context, brokers string) error {
 	if err != nil {
 		return err
 	}
-	defer consumer.Close()
+	defer requestConsumer.Close()
 
-	return consumer.Run(ctx)
+	responseConsumer, err := kafka.NewConsumer(kafka.ConsumerConfig{
+		Brokers:  brokerList,
+		Topic:    kafka.TopicAgentResponses,
+		GroupID:  "redops-orchestrator-responses",
+		MaxRetry: 3,
+		Validate: kafka.ValidateAgentResponse,
+		Handler:  responseHandler.HandleMessage,
+	})
+	if err != nil {
+		return err
+	}
+	defer responseConsumer.Close()
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return requestConsumer.Run(ctx) })
+	g.Go(func() error { return responseConsumer.Run(ctx) })
+
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
 }

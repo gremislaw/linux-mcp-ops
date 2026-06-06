@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/tools/setup_workstation.schema.json",
+  "title": "setup_workstation",
+  "description": "Первичная настройка рабочей станции или сервера",
+  "type": "object",
+  "required": ["hostname"],
+  "additionalProperties": false,
+  "properties": {
+    "hostname": {
+      "type": "string",
+      "description": "Имя хоста для настройки"
+    },
+    "username": {
+      "type": "string",
+      "description": "Локальный пользователь"
+    },
+    "packages": {
+      "type": "array",
+      "description": "Список пакетов для установки",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ssh_key_path": {
+      "type": "string",
+      "description": "Путь к публичному SSH-ключу для деплоя"
+    }
+  }
+}

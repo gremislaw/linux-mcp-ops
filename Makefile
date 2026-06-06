@@ -23,6 +23,13 @@ test:
 
 build:
 	go build -o bin/kafka-smoke ./cmd/kafka-smoke
+	go build -o bin/ollama-smoke ./cmd/ollama-smoke
+
+ollama-test:
+	OLLAMA_BASE_URL=http://localhost:11434 go test ./internal/llm/... -run TestCallOllamaIntegration -v
+
+ollama-smoke:
+	OLLAMA_BASE_URL=http://localhost:11434 ./bin/ollama-smoke
 
 smoke-produce:
 	./bin/kafka-smoke -mode produce-orchestrator -intent execute

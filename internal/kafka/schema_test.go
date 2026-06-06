@@ -45,7 +45,7 @@ func TestValidateOrchestratorResponse(t *testing.T) {
 	valid := []byte(`{
 		"correlation_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
 		"chat_id": 1001,
-		"text": "✅ nginx restarted",
+		"text": "[OK] nginx restarted",
 		"timestamp": "2026-06-06T12:00:00Z"
 	}`)
 	if err := ValidateOrchestratorResponse(valid); err != nil {

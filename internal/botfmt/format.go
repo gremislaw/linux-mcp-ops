@@ -9,6 +9,12 @@ import (
 	"redops/internal/models"
 )
 
+const (
+	prefixOK         = "[OK]"
+	prefixError      = "[ERROR]"
+	prefixValidation = "[VALIDATION]"
+)
+
 var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key)\s*[:=]\s*\S+`),
 	regexp.MustCompile(`(?i)domain_admin_password\s*[:=]\s*\S+`),
@@ -20,14 +26,14 @@ func FormatAgentResponse(resp kafka.AgentResponse) string {
 		return formatSuccess(resp.Result)
 	case models.AgentStatusValidationError:
 		if resp.Error != nil && *resp.Error != "" {
-			return "⚠️ Ошибка валидации: " + MaskSecrets(*resp.Error)
+			return prefixValidation + " " + MaskSecrets(*resp.Error)
 		}
-		return "⚠️ Ошибка валидации параметров."
+		return prefixValidation + " Ошибка валидации параметров."
 	case models.AgentStatusError:
 		if resp.Error != nil && *resp.Error != "" {
-			return "❌ " + MaskSecrets(*resp.Error)
+			return prefixError + " " + MaskSecrets(*resp.Error)
 		}
-		return "❌ Произошла ошибка при выполнении задачи."
+		return prefixError + " Произошла ошибка при выполнении задачи."
 	default:
 		return fmt.Sprintf("Неизвестный статус ответа агента: %s", resp.Status)
 	}
@@ -51,11 +57,11 @@ func MaskSecrets(text string) string {
 
 func formatSuccess(result map[string]any) string {
 	if len(result) == 0 {
-		return "✅ Задача выполнена."
+		return prefixOK + " Задача выполнена."
 	}
 
 	if text := stringField(result, "message", "summary", "output", "result"); text != "" {
-		return "✅ " + MaskSecrets(text)
+		return prefixOK + " " + MaskSecrets(text)
 	}
 
 	if logs, ok := result["logs"]; ok {
@@ -65,10 +71,10 @@ func formatSuccess(result map[string]any) string {
 	}
 
 	if details := summarizeResult(result); details != "" {
-		return "✅ " + MaskSecrets(details)
+		return prefixOK + " " + MaskSecrets(details)
 	}
 
-	return "✅ Задача выполнена."
+	return prefixOK + " Задача выполнена."
 }
 
 func formatLogs(raw any) string {
@@ -89,9 +95,9 @@ func formatLogs(raw any) string {
 		return ""
 	}
 	if len(lines) == 1 {
-		return "✅ " + lines[0]
+		return prefixOK + " " + lines[0]
 	}
-	return "✅ Выполнение завершено:\n" + strings.Join(lines, "\n")
+	return prefixOK + " Выполнение завершено:\n" + strings.Join(lines, "\n")
 }
 
 func summarizeResult(result map[string]any) string {

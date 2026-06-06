@@ -16,6 +16,9 @@ func TestFormatSuccessResult(t *testing.T) {
 		Result: map[string]any{"message": "nginx restarted on prod-01"},
 		Error:  nil,
 	})
+	if !strings.HasPrefix(text, "[OK]") {
+		t.Fatalf("expected [OK] prefix: %q", text)
+	}
 	if !strings.Contains(text, "nginx restarted on prod-01") {
 		t.Fatalf("unexpected: %q", text)
 	}
@@ -27,6 +30,9 @@ func TestFormatError(t *testing.T) {
 		Status: models.AgentStatusError,
 		Error:  &errMsg,
 	})
+	if !strings.HasPrefix(text, "[ERROR]") {
+		t.Fatalf("expected [ERROR] prefix: %q", text)
+	}
 	if !strings.Contains(text, "invalid host") {
 		t.Fatalf("unexpected: %q", text)
 	}
@@ -42,5 +48,30 @@ func TestMaskSecrets(t *testing.T) {
 func TestFormatTimeout(t *testing.T) {
 	if FormatTimeout() != models.MsgAgentTimeout {
 		t.Fatal("timeout message mismatch")
+	}
+}
+
+func TestFormatNoEmoji(t *testing.T) {
+	errMsg := "connection refused"
+	cases := []string{
+		FormatAgentResponse(kafka.AgentResponse{
+			Status: models.AgentStatusSuccess,
+			Result: map[string]any{"message": "done"},
+		}),
+		FormatAgentResponse(kafka.AgentResponse{
+			Status: models.AgentStatusError,
+			Error:  &errMsg,
+		}),
+		FormatAgentResponse(kafka.AgentResponse{
+			Status: models.AgentStatusValidationError,
+			Error:  &errMsg,
+		}),
+		FormatTimeout(),
+		FormatUnrecognized(),
+	}
+	for _, text := range cases {
+		if strings.ContainsAny(text, "✅❌⚠️⏱🔹📦🧪") {
+			t.Fatalf("emoji found in output: %q", text)
+		}
 	}
 }

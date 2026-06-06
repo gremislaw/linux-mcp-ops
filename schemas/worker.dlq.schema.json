@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/worker.dlq.schema.json",
+  "title": "WorkerDLQMessage",
+  "description": "Сообщение, не обработанное после исчерпания retry",
+  "type": "object",
+  "required": [
+    "id",
+    "correlation_id",
+    "original_topic",
+    "failed_at",
+    "retry_count",
+    "error",
+    "message"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Уникальный идентификатор DLQ-записи"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Идентификатор трассировки"
+    },
+    "original_topic": {
+      "type": "string",
+      "enum": ["tg.requests", "worker.responses"],
+      "description": "Топик, из которого пришло сообщение"
+    },
+    "original_partition": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Партиция исходного сообщения"
+    },
+    "original_offset": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Offset исходного сообщения"
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Время попадания в DLQ"
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Количество предпринятых попыток обработки"
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Код ошибки"
+        },
+        "message": {
+          "type": "string",
+          "description": "Описание последней ошибки"
+        }
+      }
+    },
+    "message": {
+      "type": "object",
+      "description": "Оригинальное тело сообщения",
+      "additionalProperties": true
+    }
+  }
+}

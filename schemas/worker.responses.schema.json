@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/worker.responses.schema.json",
+  "title": "WorkerResponse",
+  "description": "Ответ воркера на обработанный запрос",
+  "type": "object",
+  "required": ["id", "correlation_id", "request_id", "timestamp", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Уникальный идентификатор ответа"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Идентификатор трассировки из исходного запроса"
+    },
+    "request_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "ID исходного запроса из tg.requests"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Время формирования ответа (ISO 8601)"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "error"],
+      "description": "Результат обработки"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Данные ответа при status=success",
+      "additionalProperties": true
+    },
+    "error": {
+      "type": "object",
+      "description": "Описание ошибки при status=error",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Код ошибки"
+        },
+        "message": {
+          "type": "string",
+          "description": "Человекочитаемое описание"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "success" } } },
+      "then": { "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "error" } } },
+      "then": { "required": ["error"] }
+    }
+  ]
+}

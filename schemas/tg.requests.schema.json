@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/tg.requests.schema.json",
+  "title": "TelegramRequest",
+  "description": "Входящий запрос от Telegram-бота в очередь обработки",
+  "type": "object",
+  "required": ["id", "correlation_id", "timestamp", "chat_id", "user_id", "text"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Уникальный идентификатор сообщения"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Идентификатор для трассировки сквозного запроса"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Время создания запроса (ISO 8601)"
+    },
+    "chat_id": {
+      "type": "integer",
+      "description": "ID чата Telegram"
+    },
+    "user_id": {
+      "type": "integer",
+      "description": "ID пользователя Telegram"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Текст сообщения пользователя"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Дополнительный контекст (username, reply_to и т.д.)",
+      "additionalProperties": true
+    }
+  }
+}

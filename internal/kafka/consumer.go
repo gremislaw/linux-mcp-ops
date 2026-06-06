@@ -140,7 +140,10 @@ func (h *consumerGroupHandler) processMessage(session sarama.ConsumerGroupSessio
 	}
 
 	if err := h.sendToDLQ(ctx, msg, lastErr); err != nil {
-		return fmt.Errorf("send to dlq: %w", err)
+		h.consumer.logger.Printf("dlq unavailable, skipping poison message offset=%d: %v", msg.Offset, err)
+		session.MarkMessage(msg, "")
+		session.Commit()
+		return nil
 	}
 
 	session.MarkMessage(msg, "")

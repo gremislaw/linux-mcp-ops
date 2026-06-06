@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
+	"redops/internal/agent"
 	"redops/internal/kafka"
 	"redops/internal/router"
 	"redops/internal/tracker"
@@ -102,9 +103,14 @@ func runOrchestrator(ctx context.Context, brokers string) error {
 	requestTracker := tracker.New()
 	responseHandler := tracker.NewResponseHandler(requestTracker)
 
+	llmClient := router.Client(router.StubClient{})
+	if os.Getenv("USE_OLLAMA") == "1" {
+		llmClient = router.OllamaClient{}
+	}
+
 	handler := router.NewHandler(router.HandlerConfig{
-		LLM:          router.StubClient{},
-		Agent:        agentProducer,
+		LLM:          llmClient,
+		Agent:        agent.NewDispatcher(agentProducer, agent.DefaultMode),
 		Orchestrator: orchestratorProducer,
 		Tracker:      requestTracker,
 	})
@@ -127,6 +133,7 @@ func runOrchestrator(ctx context.Context, brokers string) error {
 		Brokers:  brokerList,
 		Topic:    kafka.TopicAgentResponses,
 		GroupID:  "redops-orchestrator-responses",
+		DLQ:      dlq,
 		MaxRetry: 3,
 		Validate: kafka.ValidateAgentResponse,
 		Handler:  responseHandler.HandleMessage,

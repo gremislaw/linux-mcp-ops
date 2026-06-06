@@ -11,26 +11,27 @@ import (
 	"github.com/IBM/sarama"
 	"github.com/google/uuid"
 
+	"redops/internal/agent"
 	"redops/internal/kafka"
 	"redops/internal/tracker"
 )
+
+type Handler struct {
+	llm          Client
+	agent        *agent.Dispatcher
+	orchestrator AgentSender
+	tracker      *tracker.RequestTracker
+	waitTimeout  time.Duration
+	log          *log.Logger
+}
 
 type AgentSender interface {
 	Send(ctx context.Context, key string, value any) (partition int32, offset int64, err error)
 }
 
-type Handler struct {
-	llm           Client
-	agent         AgentSender
-	orchestrator  AgentSender
-	tracker       *tracker.RequestTracker
-	waitTimeout   time.Duration
-	log           *log.Logger
-}
-
 type HandlerConfig struct {
 	LLM          Client
-	Agent        AgentSender
+	Agent        *agent.Dispatcher
 	Orchestrator AgentSender
 	Tracker      *tracker.RequestTracker
 	WaitTimeout  time.Duration
@@ -78,7 +79,7 @@ func (h *Handler) Handle(ctx context.Context, req kafka.OrchestratorRequest) err
 	return h.processRequest(ctx, req)
 }
 
-func (h *Handler) handlePassive(ctx context.Context, req kafka.OrchestratorRequest) error {
+func (h *Handler) handlePassive(_ context.Context, req kafka.OrchestratorRequest) error {
 	h.log.Printf("passive intent=%s id=%s, no action required", req.Intent, req.ID)
 	return nil
 }
@@ -93,25 +94,25 @@ func (h *Handler) processRequest(ctx context.Context, req kafka.OrchestratorRequ
 	if err != nil {
 		return fmt.Errorf("llm analyze: %w", err)
 	}
-
-	agentReq := kafka.AgentRequest{
-		ID:                    uuid.NewString(),
-		CorrelationID:         req.CorrelationID,
-		OrchestratorRequestID: req.ID,
-		Timestamp:             time.Now().UTC(),
-		Intent:                req.Intent,
-		Prompt:                result.Prompt,
-		Plan:                  result.Plan,
+	if len(result.ToolCalls) == 0 {
+		return fmt.Errorf("llm returned no tool_calls for request %s", req.ID)
 	}
 
-	partition, offset, err := h.agent.Send(ctx, req.CorrelationID, agentReq)
+	toolCall := result.ToolCalls[0]
+
+	agentReq, err := h.agent.Dispatch(ctx, agent.DispatchInput{
+		RequestID:     req.ID,
+		CorrelationID: req.CorrelationID,
+		Tool:          toolCall.Name,
+		Arguments:     toolCall.Arguments,
+	})
 	if err != nil {
-		return fmt.Errorf("send agent request: %w", err)
+		return fmt.Errorf("dispatch agent request: %w", err)
 	}
 
 	h.log.Printf(
-		"routed to %s partition=%d offset=%d orchestrator_id=%s agent_id=%s",
-		kafka.TopicAgentRequests, partition, offset, req.ID, agentReq.ID,
+		"dispatched to %s tool=%s mode=%s request_id=%s correlation_id=%s agent_id=%s",
+		kafka.TopicAgentRequests, agentReq.Tool, agentReq.Mode, agentReq.RequestID, agentReq.CorrelationID, agentReq.ID,
 	)
 
 	timer := time.NewTimer(h.waitTimeout)

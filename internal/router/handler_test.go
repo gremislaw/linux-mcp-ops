@@ -7,7 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"redops/internal/agent"
 	"redops/internal/kafka"
+	"redops/internal/llm"
 	"redops/internal/tracker"
 )
 
@@ -18,16 +20,20 @@ type mockLLM struct {
 func (m *mockLLM) Analyze(_ context.Context, req kafka.OrchestratorRequest) (Result, error) {
 	m.called = true
 	return Result{
-		Prompt: "mock prompt for " + req.Text,
-		Plan:   map[string]any{"action": "mock"},
+		ToolCalls: []llm.ToolCall{
+			{
+				Name:      "diagnose_auth",
+				Arguments: map[string]any{"host": "prod-01", "symptom": req.Text},
+			},
+		},
 	}, nil
 }
 
-type recordingAgent struct {
+type recordingSender struct {
 	sent []kafka.AgentRequest
 }
 
-func (p *recordingAgent) Send(_ context.Context, _ string, value any) (int32, int64, error) {
+func (p *recordingSender) Send(_ context.Context, _ string, value any) (int32, int64, error) {
 	req := value.(kafka.AgentRequest)
 	p.sent = append(p.sent, req)
 	return 1, 42, nil
@@ -53,9 +59,10 @@ func TestRequiresAction(t *testing.T) {
 }
 
 func TestHandlePassiveIntent(t *testing.T) {
+	sender := &recordingSender{}
 	h := NewHandler(HandlerConfig{
 		LLM:   &mockLLM{},
-		Agent: &recordingAgent{},
+		Agent: agent.NewDispatcher(sender, agent.DefaultMode),
 	})
 
 	req := kafka.OrchestratorRequest{
@@ -73,12 +80,12 @@ func TestHandlePassiveIntent(t *testing.T) {
 
 func TestHandleActionIntentWithAgentResponse(t *testing.T) {
 	tr := tracker.New()
-	agent := &recordingAgent{}
+	sender := &recordingSender{}
 	orch := &recordingOrchestrator{}
 
 	h := NewHandler(HandlerConfig{
 		LLM:          &mockLLM{},
-		Agent:        agent,
+		Agent:        agent.NewDispatcher(sender, agent.DefaultMode),
 		Orchestrator: orch,
 		Tracker:      tr,
 		WaitTimeout:  2 * time.Second,
@@ -99,11 +106,20 @@ func TestHandleActionIntentWithAgentResponse(t *testing.T) {
 	}()
 
 	time.Sleep(50 * time.Millisecond)
-	if len(agent.sent) != 1 {
-		t.Fatalf("expected agent request, got %d", len(agent.sent))
+	if len(sender.sent) != 1 {
+		t.Fatalf("expected agent request, got %d", len(sender.sent))
+	}
+	if sender.sent[0].Mode != "dry-run" {
+		t.Fatalf("expected dry-run mode, got %s", sender.sent[0].Mode)
+	}
+	if sender.sent[0].CorrelationID != req.CorrelationID {
+		t.Fatalf("correlation_id mismatch")
+	}
+	if sender.sent[0].RequestID != req.ID {
+		t.Fatalf("request_id mismatch")
 	}
 
-	agentReqID := agent.sent[0].ID
+	agentReqID := sender.sent[0].ID
 	tr.Deliver(req.CorrelationID, kafka.AgentResponse{
 		ID:             uuid.NewString(),
 		CorrelationID:  req.CorrelationID,
@@ -130,7 +146,7 @@ func TestHandleActionIntentTimeout(t *testing.T) {
 
 	h := NewHandler(HandlerConfig{
 		LLM:          &mockLLM{},
-		Agent:        &recordingAgent{},
+		Agent:        agent.NewDispatcher(&recordingSender{}, agent.DefaultMode),
 		Orchestrator: orch,
 		Tracker:      tr,
 		WaitTimeout:  100 * time.Millisecond,

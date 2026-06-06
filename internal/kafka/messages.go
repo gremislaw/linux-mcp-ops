@@ -51,13 +51,13 @@ type OrchestratorRequest struct {
 }
 
 type AgentRequest struct {
-	ID                    string         `json:"id"`
-	CorrelationID         string         `json:"correlation_id"`
-	OrchestratorRequestID string         `json:"orchestrator_request_id"`
-	Timestamp             time.Time      `json:"timestamp"`
-	Intent                string         `json:"intent"`
-	Prompt                string         `json:"prompt"`
-	Plan                  map[string]any `json:"plan"`
+	ID            string         `json:"id"`
+	RequestID     string         `json:"request_id"`
+	CorrelationID string         `json:"correlation_id"`
+	Timestamp     time.Time      `json:"timestamp"`
+	Tool          string         `json:"tool"`
+	Arguments     map[string]any `json:"arguments"`
+	Mode          string         `json:"mode"`
 }
 
 type AgentResponse struct {

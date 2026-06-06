@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
+	"log/slog"
 	"time"
 
 	"github.com/IBM/sarama"
-	"github.com/google/uuid"
 
 	"redops/internal/agent"
 	"redops/internal/botfmt"
@@ -17,25 +15,26 @@ import (
 	"redops/internal/tracker"
 )
 
-type Handler struct {
-	llm          Client
-	agent        *agent.Dispatcher
-	orchestrator AgentSender
-	tracker      *tracker.RequestTracker
-	waitTimeout  time.Duration
-	log          *log.Logger
+type BotSender interface {
+	Send(ctx context.Context, key string, value any) (partition int32, offset int64, err error)
 }
 
-type AgentSender interface {
-	Send(ctx context.Context, key string, value any) (partition int32, offset int64, err error)
+type Handler struct {
+	llm         Client
+	agent       *agent.Dispatcher
+	bot         BotSender
+	tracker     *tracker.RequestTracker
+	waitTimeout time.Duration
+	log         *slog.Logger
 }
 
 type HandlerConfig struct {
 	LLM          Client
 	Agent        *agent.Dispatcher
-	Orchestrator AgentSender
+	Bot          BotSender
 	Tracker      *tracker.RequestTracker
 	WaitTimeout  time.Duration
+	Logger       *slog.Logger
 }
 
 func NewHandler(cfg HandlerConfig) *Handler {
@@ -48,14 +47,17 @@ func NewHandler(cfg HandlerConfig) *Handler {
 	if cfg.WaitTimeout <= 0 {
 		cfg.WaitTimeout = kafka.DefaultWaitTimeout
 	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
 
 	return &Handler{
-		llm:          cfg.LLM,
-		agent:        cfg.Agent,
-		orchestrator: cfg.Orchestrator,
-		tracker:      cfg.Tracker,
-		waitTimeout:  cfg.WaitTimeout,
-		log:          log.New(os.Stderr, "[router] ", log.LstdFlags),
+		llm:         cfg.LLM,
+		agent:       cfg.Agent,
+		bot:         cfg.Bot,
+		tracker:     cfg.Tracker,
+		waitTimeout: cfg.WaitTimeout,
+		log:         cfg.Logger,
 	}
 }
 
@@ -65,55 +67,48 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *sarama.ConsumerMessage
 		return fmt.Errorf("parse orchestrator request: %w", err)
 	}
 
-	if !RequiresAction(req.Intent) {
-		return h.handlePassive(ctx, req)
-	}
-
 	go h.processRequest(context.WithoutCancel(ctx), req)
 	return nil
 }
 
 func (h *Handler) Handle(ctx context.Context, req kafka.OrchestratorRequest) error {
-	if !RequiresAction(req.Intent) {
-		return h.handlePassive(ctx, req)
-	}
 	return h.processRequest(ctx, req)
 }
 
-func (h *Handler) handlePassive(_ context.Context, req kafka.OrchestratorRequest) error {
-	h.log.Printf("passive intent=%s id=%s, no action required", req.Intent, req.ID)
-	return nil
-}
-
 func (h *Handler) processRequest(ctx context.Context, req kafka.OrchestratorRequest) error {
-	h.log.Printf("processing orchestrator request id=%s intent=%s text=%q", req.ID, req.Intent, req.Text)
+	log := h.log.With(
+		"request_id", req.RequestID,
+		"correlation_id", req.CorrelationID,
+		"chat_id", req.ChatID,
+	)
+
+	log.Info("received orchestrator request", "user_text", req.UserText)
+
+	result, err := h.llm.Analyze(ctx, req.UserText)
+	if err != nil || len(result.ToolCalls) == 0 {
+		log.Warn("llm did not return tool_calls", "error", err)
+		return h.sendBotMessage(ctx, req, botfmt.FormatUnrecognized())
+	}
+
+	toolCall := result.ToolCalls[0]
+	log.Info("llm tool call", "intent", toolCall.Name, "payload", toolCall.Arguments)
 
 	waitCh := h.tracker.Register(req.CorrelationID)
 	defer h.tracker.Unregister(req.CorrelationID)
 
-	result, err := h.llm.Analyze(ctx, req)
-	if err != nil {
-		return fmt.Errorf("llm analyze: %w", err)
-	}
-	if len(result.ToolCalls) == 0 {
-		return fmt.Errorf("llm returned no tool_calls for request %s", req.ID)
-	}
-
-	toolCall := result.ToolCalls[0]
-
 	agentReq, err := h.agent.Dispatch(ctx, agent.DispatchInput{
-		RequestID:     req.ID,
 		CorrelationID: req.CorrelationID,
-		Tool:          toolCall.Name,
-		Arguments:     toolCall.Arguments,
+		Intent:        toolCall.Name,
+		Payload:       toolCall.Arguments,
 	})
 	if err != nil {
 		return fmt.Errorf("dispatch agent request: %w", err)
 	}
 
-	h.log.Printf(
-		"dispatched to %s tool=%s mode=%s request_id=%s correlation_id=%s agent_id=%s",
-		kafka.TopicAgentRequests, agentReq.Tool, agentReq.Mode, agentReq.RequestID, agentReq.CorrelationID, agentReq.ID,
+	log.Info("dispatched agent request",
+		"agent_request_id", agentReq.RequestID,
+		"intent", agentReq.Intent,
+		"mode", agentReq.Mode,
 	)
 
 	timer := time.NewTimer(h.waitTimeout)
@@ -124,70 +119,34 @@ func (h *Handler) processRequest(ctx context.Context, req kafka.OrchestratorRequ
 		if !ok {
 			return fmt.Errorf("wait channel closed for correlation_id=%s", req.CorrelationID)
 		}
-		return h.sendOrchestratorResponse(ctx, req, agentResp)
+		log.Info("received agent response", "status", agentResp.Status)
+		return h.sendBotMessage(ctx, req, botfmt.FormatAgentResponse(agentResp))
 	case <-timer.C:
-		return h.sendTimeoutResponse(ctx, req)
+		log.Warn("agent response timeout", "timeout", h.waitTimeout)
+		return h.sendBotMessage(ctx, req, botfmt.FormatTimeout())
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-func (h *Handler) sendOrchestratorResponse(ctx context.Context, req kafka.OrchestratorRequest, agentResp kafka.AgentResponse) error {
+func (h *Handler) sendBotMessage(ctx context.Context, req kafka.OrchestratorRequest, text string) error {
 	resp := kafka.OrchestratorResponse{
-		ID:                    uuid.NewString(),
-		CorrelationID:         req.CorrelationID,
-		OrchestratorRequestID: req.ID,
-		Timestamp:             time.Now().UTC(),
-		Status:                agentResp.Status,
-		ChatID:                req.ChatID,
+		CorrelationID: req.CorrelationID,
+		ChatID:        req.ChatID,
+		Text:          botfmt.MaskSecrets(text),
+		Timestamp:     time.Now().UTC(),
 	}
 
-	if agentResp.Status == "success" {
-		resp.Payload = agentResp.Payload
-		resp.Text = botfmt.FormatAgentResponse(agentResp)
-	} else if agentResp.Error != nil {
-		resp.Error = agentResp.Error
-		resp.Text = botfmt.FormatAgentResponse(agentResp)
-	} else {
-		resp.Error = &kafka.ErrorDetail{Code: "AGENT_ERROR", Message: "agent returned error status without details"}
-		resp.Text = botfmt.FormatAgentResponse(kafka.AgentResponse{Status: "error", Error: resp.Error})
-	}
-
-	partition, offset, err := h.orchestrator.Send(ctx, req.CorrelationID, resp)
+	partition, offset, err := h.bot.Send(ctx, req.CorrelationID, resp)
 	if err != nil {
 		return fmt.Errorf("send orchestrator response: %w", err)
 	}
 
-	h.log.Printf(
-		"sent to %s partition=%d offset=%d correlation_id=%s status=%s",
-		kafka.TopicOrchestratorResponses, partition, offset, req.CorrelationID, resp.Status,
-	)
-	return nil
-}
-
-func (h *Handler) sendTimeoutResponse(ctx context.Context, req kafka.OrchestratorRequest) error {
-	resp := kafka.OrchestratorResponse{
-		ID:                    uuid.NewString(),
-		CorrelationID:         req.CorrelationID,
-		OrchestratorRequestID: req.ID,
-		Timestamp:             time.Now().UTC(),
-		Status:                "timeout",
-		ChatID:                req.ChatID,
-		Error: &kafka.ErrorDetail{
-			Code:    "AGENT_TIMEOUT",
-			Message: fmt.Sprintf("agent did not respond within %s", h.waitTimeout),
-		},
-		Text: botfmt.FormatTimeout(h.waitTimeout),
-	}
-
-	partition, offset, err := h.orchestrator.Send(ctx, req.CorrelationID, resp)
-	if err != nil {
-		return fmt.Errorf("send timeout response: %w", err)
-	}
-
-	h.log.Printf(
-		"timeout sent to %s partition=%d offset=%d correlation_id=%s",
-		kafka.TopicOrchestratorResponses, partition, offset, req.CorrelationID,
+	h.log.Info("sent bot response",
+		"request_id", req.RequestID,
+		"correlation_id", req.CorrelationID,
+		"partition", partition,
+		"offset", offset,
 	)
 	return nil
 }

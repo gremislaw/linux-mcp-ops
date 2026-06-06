@@ -166,19 +166,17 @@ func (h *consumerGroupHandler) sendToDLQ(ctx context.Context, msg *sarama.Consum
 		correlationID = uuid.NewString()
 	}
 
-	dlqMsg := WorkerDLQMessage{
-		ID:                uuid.NewString(),
-		CorrelationID:     correlationID,
-		OriginalTopic:     msg.Topic,
-		OriginalPartition: msg.Partition,
-		OriginalOffset:    msg.Offset,
-		FailedAt:          time.Now().UTC(),
-		RetryCount:        h.consumer.maxRetry,
-		Error: ErrorDetail{
-			Code:    "PROCESSING_FAILED",
-			Message: procErr.Error(),
-		},
-		Message: original,
+	requestID, _ := original["request_id"].(string)
+
+	dlqMsg := OrchestratorDLQMessage{
+		ID:            uuid.NewString(),
+		CorrelationID: correlationID,
+		RequestID:     requestID,
+		FailedAt:      time.Now().UTC(),
+		ErrorCode:     "PROCESSING_FAILED",
+		ErrorMessage:  procErr.Error(),
+		OriginalTopic: msg.Topic,
+		Message:       original,
 	}
 
 	_, _, err := h.consumer.dlq.Send(ctx, correlationID, dlqMsg)

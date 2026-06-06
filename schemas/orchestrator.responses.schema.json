@@ -4,68 +4,23 @@
   "title": "OrchestratorResponse",
   "description": "Итоговый ответ оркестратора для Telegram-бота",
   "type": "object",
-  "required": [
-    "id",
-    "correlation_id",
-    "orchestrator_request_id",
-    "timestamp",
-    "status",
-    "chat_id",
-    "text"
-  ],
+  "required": ["correlation_id", "chat_id", "text", "timestamp"],
   "additionalProperties": false,
   "properties": {
-    "id": {
-      "type": "string",
-      "format": "uuid"
-    },
     "correlation_id": {
       "type": "string",
       "format": "uuid"
-    },
-    "orchestrator_request_id": {
-      "type": "string",
-      "format": "uuid"
-    },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "status": {
-      "type": "string",
-      "enum": ["success", "error", "timeout"]
     },
     "chat_id": {
       "type": "integer"
     },
     "text": {
       "type": "string",
-      "minLength": 1,
-      "description": "Человекочитаемый текст для отправки в Telegram"
+      "minLength": 1
     },
-    "payload": {
-      "type": "object",
-      "additionalProperties": true,
-      "description": "Опциональные структурированные данные для фронтенда"
-    },
-    "error": {
-      "type": "object",
-      "required": ["code", "message"],
-      "additionalProperties": false,
-      "properties": {
-        "code": { "type": "string" },
-        "message": { "type": "string" }
-      }
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
     }
-  },
-  "allOf": [
-    {
-      "if": { "properties": { "status": { "const": "error" } } },
-      "then": { "required": ["error"] }
-    },
-    {
-      "if": { "properties": { "status": { "const": "timeout" } } },
-      "then": { "required": ["error"] }
-    }
-  ]
+  }
 }

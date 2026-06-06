@@ -3,11 +3,11 @@ package agent
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
 	"redops/internal/kafka"
+	"redops/internal/models"
 )
 
 type recordingSender struct {
@@ -21,50 +21,42 @@ func (s *recordingSender) Send(_ context.Context, _ string, value any) (int32, i
 
 func TestBuildRequestDefaults(t *testing.T) {
 	req, err := BuildRequest(DispatchInput{
-		RequestID:     uuid.NewString(),
 		CorrelationID: uuid.NewString(),
-		Tool:          "diagnose_auth",
-		Arguments:     map[string]any{"host": "prod-01"},
-	}, DefaultMode)
+		Intent:        models.IntentDiagnoseAuth,
+		Payload:       map[string]any{"host": "prod-01"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if req.Mode != "dry-run" {
+	if req.Mode != models.AgentModeDryRun {
 		t.Fatalf("expected dry-run, got %s", req.Mode)
 	}
-	if req.Tool != "diagnose_auth" {
-		t.Fatalf("unexpected tool: %s", req.Tool)
-	}
-	if req.Arguments["host"] != "prod-01" {
-		t.Fatalf("unexpected arguments: %#v", req.Arguments)
+	if req.Intent != models.IntentDiagnoseAuth {
+		t.Fatalf("unexpected intent: %s", req.Intent)
 	}
 }
 
 func TestDispatcherSend(t *testing.T) {
 	sender := &recordingSender{}
-	d := NewDispatcher(sender, DefaultMode)
+	d := NewDispatcher(sender, models.AgentModeDryRun)
 
-	requestID := uuid.NewString()
 	correlationID := uuid.NewString()
-
 	sent, err := d.Dispatch(context.Background(), DispatchInput{
-		RequestID:     requestID,
 		CorrelationID: correlationID,
-		Tool:          "diagnose_auth",
-		Arguments:     map[string]any{"symptom": "SSH failed"},
+		Intent:        models.IntentDiagnoseAuth,
+		Payload:       map[string]any{"symptom": "SSH failed"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if sender.last.CorrelationID != correlationID {
-		t.Fatalf("correlation_id mismatch: %s", sender.last.CorrelationID)
+		t.Fatalf("correlation_id mismatch")
 	}
-	if sender.last.RequestID != requestID {
-		t.Fatalf("request_id mismatch: %s", sender.last.RequestID)
+	if sender.last.RequestID != sent.RequestID {
+		t.Fatalf("request_id mismatch")
 	}
-	if sent.ID != sender.last.ID {
-		t.Fatalf("returned request id mismatch")
+	if sender.last.Mode != models.AgentModeDryRun {
+		t.Fatalf("expected dry-run")
 	}
-	_ = time.Now()
 }

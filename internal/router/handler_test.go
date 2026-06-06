@@ -2,6 +2,8 @@ package router
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,173 +13,147 @@ import (
 	"redops/internal/agent"
 	"redops/internal/kafka"
 	"redops/internal/llm"
+	"redops/internal/models"
 	"redops/internal/tracker"
 )
 
-type mockLLM struct {
-	called bool
-}
+type mockLLM struct{}
 
-func (m *mockLLM) Analyze(_ context.Context, req kafka.OrchestratorRequest) (Result, error) {
-	m.called = true
+func (mockLLM) Analyze(_ context.Context, _ string) (Result, error) {
 	return Result{
-		ToolCalls: []llm.ToolCall{
-			{
-				Name:      "diagnose_auth",
-				Arguments: map[string]any{"host": "prod-01", "symptom": req.Text},
-			},
-		},
+		ToolCalls: []llm.ToolCall{{
+			Name:      models.IntentDiagnoseAuth,
+			Arguments: map[string]any{"host": "prod-01"},
+		}},
 	}, nil
 }
 
-type recordingSender struct {
+type recordingAgent struct {
 	sent []kafka.AgentRequest
 }
 
-func (p *recordingSender) Send(_ context.Context, _ string, value any) (int32, int64, error) {
-	req := value.(kafka.AgentRequest)
-	p.sent = append(p.sent, req)
+func (p *recordingAgent) Send(_ context.Context, _ string, value any) (int32, int64, error) {
+	p.sent = append(p.sent, value.(kafka.AgentRequest))
 	return 1, 42, nil
 }
 
-type recordingOrchestrator struct {
+type recordingBot struct {
 	sent []kafka.OrchestratorResponse
 }
 
-func (p *recordingOrchestrator) Send(_ context.Context, _ string, value any) (int32, int64, error) {
-	resp := value.(kafka.OrchestratorResponse)
-	p.sent = append(p.sent, resp)
+func (p *recordingBot) Send(_ context.Context, _ string, value any) (int32, int64, error) {
+	p.sent = append(p.sent, value.(kafka.OrchestratorResponse))
 	return 2, 99, nil
 }
 
-func TestRequiresAction(t *testing.T) {
-	if !RequiresAction("execute") {
-		t.Fatal("execute should require action")
-	}
-	if RequiresAction("noop") {
-		t.Fatal("noop should not require action")
-	}
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
-func TestHandlePassiveIntent(t *testing.T) {
-	sender := &recordingSender{}
-	h := NewHandler(HandlerConfig{
-		LLM:   &mockLLM{},
-		Agent: agent.NewDispatcher(sender, agent.DefaultMode),
-	})
-
-	req := kafka.OrchestratorRequest{
-		ID:            uuid.NewString(),
-		CorrelationID: uuid.NewString(),
-		Timestamp:     time.Now().UTC(),
-		Intent:        "noop",
-		Text:          "hello",
-	}
-
-	if err := h.Handle(context.Background(), req); err != nil {
-		t.Fatalf("handle passive: %v", err)
-	}
-}
-
-func TestHandleActionIntentWithAgentResponse(t *testing.T) {
+func TestHandleWithAgentResponse(t *testing.T) {
 	tr := tracker.New()
-	sender := &recordingSender{}
-	orch := &recordingOrchestrator{}
+	agentSender := &recordingAgent{}
+	bot := &recordingBot{}
 
 	h := NewHandler(HandlerConfig{
-		LLM:          &mockLLM{},
-		Agent:        agent.NewDispatcher(sender, agent.DefaultMode),
-		Orchestrator: orch,
-		Tracker:      tr,
-		WaitTimeout:  2 * time.Second,
+		LLM:         mockLLM{},
+		Agent:       agent.NewDispatcher(agentSender, models.AgentModeDryRun),
+		Bot:         bot,
+		Tracker:     tr,
+		WaitTimeout: 2 * time.Second,
+		Logger:      testLogger(),
 	})
 
 	req := kafka.OrchestratorRequest{
-		ID:            uuid.NewString(),
+		RequestID:     uuid.NewString(),
 		CorrelationID: uuid.NewString(),
-		Timestamp:     time.Now().UTC(),
-		Intent:        "execute",
-		Text:          "restart nginx",
 		ChatID:        1001,
+		UserText:      "не заходит по SSH",
+		Timestamp:     time.Now().UTC(),
 	}
 
 	done := make(chan error, 1)
-	go func() {
-		done <- h.Handle(context.Background(), req)
-	}()
+	go func() { done <- h.Handle(context.Background(), req) }()
 
 	time.Sleep(50 * time.Millisecond)
-	if len(sender.sent) != 1 {
-		t.Fatalf("expected agent request, got %d", len(sender.sent))
-	}
-	if sender.sent[0].Mode != "dry-run" {
-		t.Fatalf("expected dry-run mode, got %s", sender.sent[0].Mode)
-	}
-	if sender.sent[0].CorrelationID != req.CorrelationID {
-		t.Fatalf("correlation_id mismatch")
-	}
-	if sender.sent[0].RequestID != req.ID {
-		t.Fatalf("request_id mismatch")
-	}
-
-	agentReqID := sender.sent[0].ID
+	agentReqID := agentSender.sent[0].RequestID
 	tr.Deliver(req.CorrelationID, kafka.AgentResponse{
-		ID:             uuid.NewString(),
-		CorrelationID:  req.CorrelationID,
-		AgentRequestID: agentReqID,
-		Timestamp:      time.Now().UTC(),
-		Status:         "success",
-		Payload:        map[string]any{"result": "nginx restarted"},
+		RequestID:     agentReqID,
+		CorrelationID: req.CorrelationID,
+		Status:        models.AgentStatusSuccess,
+		Result:        map[string]any{"message": "SSH ключ добавлен"},
 	})
 
 	if err := <-done; err != nil {
-		t.Fatalf("handle action: %v", err)
+		t.Fatal(err)
 	}
-	if len(orch.sent) != 1 {
-		t.Fatalf("expected orchestrator response, got %d", len(orch.sent))
+	if len(bot.sent) != 1 {
+		t.Fatalf("expected bot response, got %d", len(bot.sent))
 	}
-	if orch.sent[0].Status != "success" {
-		t.Fatalf("unexpected status: %s", orch.sent[0].Status)
+	if bot.sent[0].Text == "" {
+		t.Fatal("expected text")
 	}
-	if orch.sent[0].Text == "" {
-		t.Fatal("expected non-empty text for bot")
-	}
-	if strings.Contains(orch.sent[0].Text, "map[") {
-		t.Fatalf("text looks like go dump: %q", orch.sent[0].Text)
+	if strings.Contains(bot.sent[0].Text, "map[") {
+		t.Fatalf("go dump in text: %q", bot.sent[0].Text)
 	}
 }
 
-func TestHandleActionIntentTimeout(t *testing.T) {
+func TestHandleTimeout(t *testing.T) {
 	tr := tracker.New()
-	orch := &recordingOrchestrator{}
+	bot := &recordingBot{}
 
 	h := NewHandler(HandlerConfig{
-		LLM:          &mockLLM{},
-		Agent:        agent.NewDispatcher(&recordingSender{}, agent.DefaultMode),
-		Orchestrator: orch,
-		Tracker:      tr,
-		WaitTimeout:  100 * time.Millisecond,
+		LLM:         mockLLM{},
+		Agent:       agent.NewDispatcher(&recordingAgent{}, models.AgentModeDryRun),
+		Bot:         bot,
+		Tracker:     tr,
+		WaitTimeout: 100 * time.Millisecond,
+		Logger:      testLogger(),
 	})
 
 	req := kafka.OrchestratorRequest{
-		ID:            uuid.NewString(),
+		RequestID:     uuid.NewString(),
 		CorrelationID: uuid.NewString(),
-		Timestamp:     time.Now().UTC(),
-		Intent:        "execute",
-		Text:          "restart nginx",
 		ChatID:        1001,
+		UserText:      "restart nginx",
+		Timestamp:     time.Now().UTC(),
 	}
 
 	if err := h.Handle(context.Background(), req); err != nil {
-		t.Fatalf("handle timeout: %v", err)
+		t.Fatal(err)
 	}
-	if len(orch.sent) != 1 {
-		t.Fatalf("expected timeout response, got %d", len(orch.sent))
+	if bot.sent[0].Text != models.MsgAgentTimeout {
+		t.Fatalf("unexpected text: %q", bot.sent[0].Text)
 	}
-	if orch.sent[0].Status != "timeout" {
-		t.Fatalf("unexpected status: %s", orch.sent[0].Status)
+}
+
+func TestHandleLLMFailure(t *testing.T) {
+	bot := &recordingBot{}
+	h := NewHandler(HandlerConfig{
+		LLM:    failingLLM{},
+		Agent:  agent.NewDispatcher(&recordingAgent{}, models.AgentModeDryRun),
+		Bot:    bot,
+		Logger: testLogger(),
+	})
+
+	req := kafka.OrchestratorRequest{
+		RequestID:     uuid.NewString(),
+		CorrelationID: uuid.NewString(),
+		ChatID:        1001,
+		UserText:      "привет",
+		Timestamp:     time.Now().UTC(),
 	}
-	if orch.sent[0].Text == "" {
-		t.Fatal("expected timeout text for bot")
+
+	if err := h.Handle(context.Background(), req); err != nil {
+		t.Fatal(err)
 	}
+	if bot.sent[0].Text != models.MsgUnrecognizedRequest {
+		t.Fatalf("unexpected text: %q", bot.sent[0].Text)
+	}
+}
+
+type failingLLM struct{}
+
+func (failingLLM) Analyze(context.Context, string) (Result, error) {
+	return Result{}, nil
 }

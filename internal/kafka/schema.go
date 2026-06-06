@@ -11,13 +11,11 @@ import (
 )
 
 var (
-	telegramRequestSchema       *jsonschema.Schema
-	orchestratorRequestSchema   *jsonschema.Schema
-	orchestratorResponseSchema  *jsonschema.Schema
-	agentRequestSchema          *jsonschema.Schema
-	agentResponseSchema         *jsonschema.Schema
-	workerResponseSchema        *jsonschema.Schema
-	workerDLQSchema             *jsonschema.Schema
+	orchestratorRequestSchema  *jsonschema.Schema
+	orchestratorResponseSchema *jsonschema.Schema
+	orchestratorDLQSchema      *jsonschema.Schema
+	agentRequestSchema         *jsonschema.Schema
+	agentResponseSchema        *jsonschema.Schema
 )
 
 func init() {
@@ -25,13 +23,11 @@ func init() {
 	compiler.Draft = jsonschema.Draft2020
 
 	entries := map[string]**jsonschema.Schema{
-		"tg.requests":              &telegramRequestSchema,
-		"orchestrator.requests":      &orchestratorRequestSchema,
-		"orchestrator.responses":     &orchestratorResponseSchema,
-		"agent.requests":             &agentRequestSchema,
-		"agent.responses":            &agentResponseSchema,
-		"worker.responses":           &workerResponseSchema,
-		"worker.dlq":                 &workerDLQSchema,
+		"orchestrator.requests":  &orchestratorRequestSchema,
+		"orchestrator.responses": &orchestratorResponseSchema,
+		"orchestrator.dlq":       &orchestratorDLQSchema,
+		"agent.requests":         &agentRequestSchema,
+		"agent.responses":        &agentResponseSchema,
 	}
 
 	for topic, target := range entries {
@@ -50,12 +46,16 @@ func init() {
 	}
 }
 
-func ValidateTelegramRequest(data []byte) error {
-	return validate(telegramRequestSchema, data)
-}
-
 func ValidateOrchestratorRequest(data []byte) error {
 	return validate(orchestratorRequestSchema, data)
+}
+
+func ValidateOrchestratorResponse(data []byte) error {
+	return validate(orchestratorResponseSchema, data)
+}
+
+func ValidateOrchestratorDLQ(data []byte) error {
+	return validate(orchestratorDLQSchema, data)
 }
 
 func ValidateAgentRequest(data []byte) error {
@@ -64,18 +64,6 @@ func ValidateAgentRequest(data []byte) error {
 
 func ValidateAgentResponse(data []byte) error {
 	return validate(agentResponseSchema, data)
-}
-
-func ValidateOrchestratorResponse(data []byte) error {
-	return validate(orchestratorResponseSchema, data)
-}
-
-func ValidateWorkerResponse(data []byte) error {
-	return validate(workerResponseSchema, data)
-}
-
-func ValidateWorkerDLQ(data []byte) error {
-	return validate(workerDLQSchema, data)
 }
 
 func validate(schema *jsonschema.Schema, data []byte) error {

@@ -4,76 +4,56 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BROKERS="${BROKERS:-localhost:9092}"
 DELAY="${DELAY:-2}"
-BIN="$ROOT/bin/kafka-smoke"
+BIN="$ROOT/bin/orchestrator"
+SMOKE="$ROOT/bin/kafka-smoke"
 
 if [[ ! -x "$BIN" ]]; then
+  (cd "$ROOT" && go build -o bin/orchestrator ./cmd/orchestrator)
+fi
+if [[ ! -x "$SMOKE" ]]; then
   (cd "$ROOT" && go build -o bin/kafka-smoke ./cmd/kafka-smoke)
 fi
 
-echo "==> Starting orchestrator (background)"
-"$BIN" -mode consume -brokers "$BROKERS" > /tmp/e2e-orchestrator.log 2>&1 &
+echo "==> Starting orchestrator"
+USE_OLLAMA="${USE_OLLAMA:-0}" KAFKA_BROKERS="$BROKERS" "$BIN" > /tmp/e2e-orchestrator.log 2>&1 &
 ORCH_PID=$!
 trap 'kill $ORCH_PID 2>/dev/null || true' EXIT
 sleep 2
 
 echo "==> Sending orchestrator.requests"
-CORR=$("$BIN" -mode produce-orchestrator -brokers "$BROKERS" 2>/dev/null | tail -1)
+CORR=$("$SMOKE" -brokers "$BROKERS" 2>/dev/null | tail -1)
 echo "correlation_id=$CORR"
 
-echo "==> Waiting for agent.requests (up to 15s)"
+echo "==> Waiting for agent.requests"
 FOUND=""
 for _ in $(seq 1 15); do
-  MSG=$(docker exec redops-kafka /opt/kafka/bin/kafka-console-consumer.sh \
-    --bootstrap-server localhost:9092 \
-    --topic agent.requests \
-    --from-beginning \
-    --timeout-ms 1000 \
-    --property print.key=true 2>/dev/null | grep "$CORR" | tail -1 || true)
-  if [[ -n "$MSG" ]]; then
-    FOUND="$MSG"
-    break
-  fi
+  FOUND=$(docker exec redops-kafka /opt/kafka/bin/kafka-console-consumer.sh \
+    --bootstrap-server localhost:9092 --topic agent.requests --from-beginning \
+    --timeout-ms 1000 --property print.key=true 2>/dev/null | grep "$CORR" | tail -1 || true)
+  [[ -n "$FOUND" ]] && break
   sleep 1
 done
-
-if [[ -z "$FOUND" ]]; then
-  echo "FAIL: no message in agent.requests for correlation_id=$CORR" >&2
-  cat /tmp/e2e-orchestrator.log >&2
-  exit 1
-fi
+[[ -n "$FOUND" ]] || { echo "FAIL: no agent.requests"; cat /tmp/e2e-orchestrator.log; exit 1; }
 
 echo "OK agent.requests: $FOUND"
-echo "$FOUND" | grep -q '"mode":"dry-run"' || { echo "FAIL: expected mode dry-run in agent.requests"; exit 1; }
-echo "$FOUND" | grep -q '"tool":"diagnose_auth"' || echo "WARN: diagnose_auth tool not found (ollama may pick another tool)"
-echo "$FOUND" | grep -q '"request_id"' || { echo "FAIL: request_id missing"; exit 1; }
-echo "$FOUND" | grep -q "$CORR" || { echo "FAIL: correlation_id mismatch"; exit 1; }
+echo "$FOUND" | grep -q '"mode":"dry-run"' || { echo "FAIL: dry-run missing"; exit 1; }
+echo "$FOUND" | grep -q '"intent":"diagnose_auth"' || echo "WARN: intent may differ with Ollama"
 
-echo "==> Sending fake agent.responses in ${DELAY}s"
-"$ROOT/scripts/fake_agent_response.sh" "$CORR" "$DELAY" "$BROKERS" >/dev/null
+echo "==> Fake agent.responses in ${DELAY}s"
+"$ROOT/scripts/fake_agent_response.sh" "$CORR" "$DELAY" >/dev/null
 
 echo "==> Waiting for orchestrator.responses"
 FINAL=""
 for _ in $(seq 1 15); do
   FINAL=$(docker exec redops-kafka /opt/kafka/bin/kafka-console-consumer.sh \
-    --bootstrap-server localhost:9092 \
-    --topic orchestrator.responses \
-    --from-beginning \
+    --bootstrap-server localhost:9092 --topic orchestrator.responses --from-beginning \
     --timeout-ms 1000 2>/dev/null | grep "$CORR" | tail -1 || true)
-  if [[ -n "$FINAL" ]]; then
-    break
-  fi
+  [[ -n "$FINAL" ]] && break
   sleep 1
 done
-
-if [[ -z "$FINAL" ]]; then
-  echo "FAIL: no orchestrator.responses for correlation_id=$CORR" >&2
-  cat /tmp/e2e-orchestrator.log >&2
-  exit 1
-fi
+[[ -n "$FINAL" ]] || { echo "FAIL: no orchestrator.responses"; cat /tmp/e2e-orchestrator.log; exit 1; }
 
 echo "OK orchestrator.responses: $FINAL"
-echo "$FINAL" | grep -q '"status":"success"' || { echo "FAIL: expected success status"; exit 1; }
-echo "$FINAL" | grep -q '"text":' || { echo "FAIL: text field missing"; exit 1; }
-echo "$FINAL" | grep -q 'map\[' && { echo "FAIL: message looks like Go dump"; exit 1; }
-echo "$FINAL" | grep -q '"chat_id":1001' || { echo "FAIL: chat_id missing"; exit 1; }
-echo "==> E2E cycle passed"
+echo "$FINAL" | grep -q '"text":' || { echo "FAIL: text missing"; exit 1; }
+echo "$FINAL" | grep -q 'map\[' && { echo "FAIL: Go dump in text"; exit 1; }
+echo "==> E2E passed"

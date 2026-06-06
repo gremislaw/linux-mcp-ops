@@ -3,16 +3,14 @@ set -euo pipefail
 
 BOOTSTRAP="${KAFKA_BOOTSTRAP:-localhost:9092}"
 KAFKA_BIN="/opt/kafka/bin"
-RETENTION_MS=604800000 # 7 days
+RETENTION_MS=604800000
 
 topics=(
-  "tg.requests"
   "orchestrator.requests"
   "orchestrator.responses"
+  "orchestrator.dlq"
   "agent.requests"
   "agent.responses"
-  "worker.responses"
-  "worker.dlq"
 )
 
 echo "Waiting for Kafka at ${BOOTSTRAP}..."

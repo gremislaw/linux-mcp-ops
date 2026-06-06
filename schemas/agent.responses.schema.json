@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://redops.local/schemas/agent.responses.schema.json",
   "title": "AgentResponse",
-  "description": "Ответ агента на выполнение запроса",
+  "description": "Ответ Linux Agent",
   "type": "object",
-  "required": ["id", "correlation_id", "agent_request_id", "timestamp", "status"],
+  "required": ["request_id", "correlation_id", "status", "result", "error"],
   "additionalProperties": false,
   "properties": {
-    "id": {
+    "request_id": {
       "type": "string",
       "format": "uuid"
     },
@@ -15,40 +15,16 @@
       "type": "string",
       "format": "uuid"
     },
-    "agent_request_id": {
-      "type": "string",
-      "format": "uuid"
-    },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time"
-    },
     "status": {
       "type": "string",
-      "enum": ["success", "error"]
+      "enum": ["success", "error", "validation_error"]
     },
-    "payload": {
-      "type": "object",
+    "result": {
+      "type": ["object", "null"],
       "additionalProperties": true
     },
     "error": {
-      "type": "object",
-      "required": ["code", "message"],
-      "additionalProperties": false,
-      "properties": {
-        "code": { "type": "string" },
-        "message": { "type": "string" }
-      }
+      "type": ["string", "null"]
     }
-  },
-  "allOf": [
-    {
-      "if": { "properties": { "status": { "const": "success" } } },
-      "then": { "required": ["payload"] }
-    },
-    {
-      "if": { "properties": { "status": { "const": "error" } } },
-      "then": { "required": ["error"] }
-    }
-  ]
+  }
 }

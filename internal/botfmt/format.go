@@ -2,60 +2,73 @@ package botfmt
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
-	"time"
 
 	"redops/internal/kafka"
+	"redops/internal/models"
 )
+
+var secretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key)\s*[:=]\s*\S+`),
+	regexp.MustCompile(`(?i)domain_admin_password\s*[:=]\s*\S+`),
+}
 
 func FormatAgentResponse(resp kafka.AgentResponse) string {
 	switch resp.Status {
-	case "success":
-		return formatSuccess(resp.Payload)
-	case "error":
-		return formatError(resp.Error)
+	case models.AgentStatusSuccess:
+		return formatSuccess(resp.Result)
+	case models.AgentStatusValidationError:
+		if resp.Error != nil && *resp.Error != "" {
+			return "⚠️ Ошибка валидации: " + MaskSecrets(*resp.Error)
+		}
+		return "⚠️ Ошибка валидации параметров."
+	case models.AgentStatusError:
+		if resp.Error != nil && *resp.Error != "" {
+			return "❌ " + MaskSecrets(*resp.Error)
+		}
+		return "❌ Произошла ошибка при выполнении задачи."
 	default:
 		return fmt.Sprintf("Неизвестный статус ответа агента: %s", resp.Status)
 	}
 }
 
-func FormatTimeout(wait time.Duration) string {
-	return fmt.Sprintf("⏱ Агент не ответил в течение %s. Попробуйте позже.", wait)
+func FormatTimeout() string {
+	return models.MsgAgentTimeout
 }
 
-func formatSuccess(payload map[string]any) string {
-	if len(payload) == 0 {
+func FormatUnrecognized() string {
+	return models.MsgUnrecognizedRequest
+}
+
+func MaskSecrets(text string) string {
+	out := text
+	for _, pattern := range secretPatterns {
+		out = pattern.ReplaceAllString(out, "[REDACTED]")
+	}
+	return out
+}
+
+func formatSuccess(result map[string]any) string {
+	if len(result) == 0 {
 		return "✅ Задача выполнена."
 	}
 
-	if text := stringField(payload, "result", "message", "summary", "output"); text != "" {
-		return "✅ " + text
+	if text := stringField(result, "message", "summary", "output", "result"); text != "" {
+		return "✅ " + MaskSecrets(text)
 	}
 
-	if logs, ok := payload["logs"]; ok {
+	if logs, ok := result["logs"]; ok {
 		if formatted := formatLogs(logs); formatted != "" {
-			return formatted
+			return MaskSecrets(formatted)
 		}
 	}
 
-	if validation, ok := payload["validation_errors"]; ok {
-		if formatted := formatValidationErrors(validation); formatted != "" {
-			return formatted
-		}
-	}
-
-	if details := summarizePayload(payload); details != "" {
-		return "✅ " + details
+	if details := summarizeResult(result); details != "" {
+		return "✅ " + MaskSecrets(details)
 	}
 
 	return "✅ Задача выполнена."
-}
-
-func formatError(err *kafka.ErrorDetail) string {
-	if err == nil {
-		return "❌ Произошла ошибка при выполнении задачи."
-	}
-	return fmt.Sprintf("❌ [%s] %s", err.Code, err.Message)
 }
 
 func formatLogs(raw any) string {
@@ -69,11 +82,7 @@ func formatLogs(raw any) string {
 			}
 		}
 	case []string:
-		for _, s := range v {
-			if strings.TrimSpace(s) != "" {
-				lines = append(lines, s)
-			}
-		}
+		lines = append(lines, v...)
 	}
 
 	if len(lines) == 0 {
@@ -85,47 +94,9 @@ func formatLogs(raw any) string {
 	return "✅ Выполнение завершено:\n" + strings.Join(lines, "\n")
 }
 
-func formatValidationErrors(raw any) string {
-	lines := make([]string, 0)
-
-	switch v := raw.(type) {
-	case []any:
-		for _, item := range v {
-			switch entry := item.(type) {
-			case string:
-				lines = append(lines, entry)
-			case map[string]any:
-				field := stringField(entry, "field", "path", "name")
-				msg := stringField(entry, "message", "error", "detail")
-				if field != "" && msg != "" {
-					lines = append(lines, fmt.Sprintf("%s: %s", field, msg))
-				} else if msg != "" {
-					lines = append(lines, msg)
-				}
-			}
-		}
-	case map[string]any:
-		for field, value := range v {
-			lines = append(lines, fmt.Sprintf("%s: %v", field, value))
-		}
-	}
-
-	if len(lines) == 0 {
-		return ""
-	}
-	return "⚠️ Ошибки валидации:\n" + strings.Join(lines, "\n")
-}
-
-func summarizePayload(payload map[string]any) string {
-	skip := map[string]bool{
-		"source": true, "raw": true, "debug": true,
-	}
-
+func summarizeResult(result map[string]any) string {
 	parts := make([]string, 0, 3)
-	for key, value := range payload {
-		if skip[key] {
-			continue
-		}
+	for key, value := range result {
 		switch v := value.(type) {
 		case string:
 			if strings.TrimSpace(v) != "" {
@@ -138,7 +109,6 @@ func summarizePayload(payload map[string]any) string {
 			break
 		}
 	}
-
 	return strings.Join(parts, "; ")
 }
 

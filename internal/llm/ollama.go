@@ -7,15 +7,29 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
 
-const (
-	defaultOllamaBaseURL = "http://ollama.ollama.svc.cluster.local:11434"
-	defaultOllamaModel   = "llama3.2"
-)
+type Config struct {
+	BaseURL string
+	Model   string
+	Timeout time.Duration
+}
+
+func (c Config) withDefaults() Config {
+	if c.BaseURL == "" {
+		c.BaseURL = "http://ollama:11434"
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+	if c.Model == "" {
+		c.Model = "qwen2.5:7b"
+	}
+	if c.Timeout <= 0 {
+		c.Timeout = 10 * time.Second
+	}
+	return c
+}
 
 type chatRequest struct {
 	Model    string        `json:"model"`
@@ -48,34 +62,22 @@ type responseToolCall struct {
 	} `json:"function"`
 }
 
-func ollamaBaseURL() string {
-	if v := os.Getenv("OLLAMA_BASE_URL"); v != "" {
-		return strings.TrimRight(v, "/")
-	}
-	return defaultOllamaBaseURL
-}
+func CallOllama(ctx context.Context, cfg Config, userText string) (*LLMResponse, error) {
+	cfg = cfg.withDefaults()
 
-func ollamaModel() string {
-	if v := os.Getenv("OLLAMA_MODEL"); v != "" {
-		return v
-	}
-	return defaultOllamaModel
-}
-
-func CallOllama(ctx context.Context, userText string) (*LLMResponse, error) {
 	toolsList, err := agentTools()
 	if err != nil {
 		return nil, err
 	}
 
 	reqBody := chatRequest{
-		Model: ollamaModel(),
+		Model: cfg.Model,
 		Messages: []chatMessage{
 			{
 				Role: "system",
-				Content: "You are a Linux operations assistant. " +
-					"When the user describes infrastructure or access problems, " +
-					"call the appropriate tool instead of answering in plain text.",
+				Content: "You are a Linux operations assistant for RedOS. " +
+					"Classify user intent and call diagnose_auth or setup_workstation tool. " +
+					"Never answer in plain text when a tool applies.",
 			},
 			{Role: "user", Content: userText},
 		},
@@ -88,14 +90,14 @@ func CallOllama(ctx context.Context, userText string) (*LLMResponse, error) {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := ollamaBaseURL() + "/api/chat"
+	url := cfg.BaseURL + "/api/chat"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: cfg.Timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("ollama request: %w", err)

@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://redops.local/schemas/orchestrator.requests.schema.json",
   "title": "OrchestratorRequest",
-  "description": "Запрос оркестратору на маршрутизацию к LLM и агенту",
+  "description": "Входящий запрос от Telegram-бота",
   "type": "object",
-  "required": ["id", "correlation_id", "timestamp", "intent", "text"],
+  "required": ["request_id", "correlation_id", "chat_id", "user_text", "timestamp"],
   "additionalProperties": false,
   "properties": {
-    "id": {
+    "request_id": {
       "type": "string",
       "format": "uuid"
     },
@@ -15,28 +15,16 @@
       "type": "string",
       "format": "uuid"
     },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "intent": {
-      "type": "string",
-      "enum": ["execute", "tool_call", "query", "noop", "greeting", "info"],
-      "description": "Намерение пользователя; execute/tool_call/query требуют действия"
-    },
-    "text": {
-      "type": "string",
-      "minLength": 1
-    },
     "chat_id": {
       "type": "integer"
     },
-    "user_id": {
-      "type": "integer"
+    "user_text": {
+      "type": "string",
+      "minLength": 1
     },
-    "metadata": {
-      "type": "object",
-      "additionalProperties": true
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
     }
   }
 }

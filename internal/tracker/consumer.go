@@ -4,8 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
+	"log/slog"
 
 	"github.com/IBM/sarama"
 
@@ -14,14 +13,14 @@ import (
 
 type ResponseHandler struct {
 	tracker *RequestTracker
-	log     *log.Logger
+	log     *slog.Logger
 }
 
-func NewResponseHandler(tracker *RequestTracker) *ResponseHandler {
-	return &ResponseHandler{
-		tracker: tracker,
-		log:     log.New(os.Stderr, "[agent-response] ", log.LstdFlags),
+func NewResponseHandler(tracker *RequestTracker, log *slog.Logger) *ResponseHandler {
+	if log == nil {
+		log = slog.Default()
 	}
+	return &ResponseHandler{tracker: tracker, log: log}
 }
 
 func (h *ResponseHandler) HandleMessage(_ context.Context, msg *sarama.ConsumerMessage) error {
@@ -35,10 +34,14 @@ func (h *ResponseHandler) HandleMessage(_ context.Context, msg *sarama.ConsumerM
 	}
 
 	if !h.tracker.Deliver(resp.CorrelationID, resp) {
-		h.log.Printf("no waiter for correlation_id=%s", resp.CorrelationID)
+		h.log.Warn("no waiter for agent response", "correlation_id", resp.CorrelationID)
 		return nil
 	}
 
-	h.log.Printf("delivered agent response correlation_id=%s status=%s", resp.CorrelationID, resp.Status)
+	h.log.Info("delivered agent response",
+		"correlation_id", resp.CorrelationID,
+		"request_id", resp.RequestID,
+		"status", resp.Status,
+	)
 	return nil
 }

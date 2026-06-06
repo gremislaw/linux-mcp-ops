@@ -3,24 +3,21 @@ package agent
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
 	"redops/internal/kafka"
+	"redops/internal/models"
 )
-
-const DefaultMode = "dry-run"
 
 type Sender interface {
 	Send(ctx context.Context, key string, value any) (partition int32, offset int64, err error)
 }
 
 type DispatchInput struct {
-	RequestID     string
 	CorrelationID string
-	Tool          string
-	Arguments     map[string]any
+	Intent        string
+	Payload       map[string]any
 	Mode          string
 }
 
@@ -31,46 +28,43 @@ type Dispatcher struct {
 
 func NewDispatcher(producer Sender, mode string) *Dispatcher {
 	if mode == "" {
-		mode = DefaultMode
+		mode = models.AgentModeDryRun
 	}
 	return &Dispatcher{producer: producer, mode: mode}
 }
 
-func BuildRequest(in DispatchInput, defaultMode string) (kafka.AgentRequest, error) {
-	if in.RequestID == "" {
-		return kafka.AgentRequest{}, fmt.Errorf("request_id is required")
-	}
+func BuildRequest(in DispatchInput) (kafka.AgentRequest, error) {
 	if in.CorrelationID == "" {
 		return kafka.AgentRequest{}, fmt.Errorf("correlation_id is required")
 	}
-	if in.Tool == "" {
-		return kafka.AgentRequest{}, fmt.Errorf("tool is required")
+	if in.Intent == "" {
+		return kafka.AgentRequest{}, fmt.Errorf("intent is required")
 	}
-	if in.Arguments == nil {
-		in.Arguments = map[string]any{}
+	if in.Payload == nil {
+		in.Payload = map[string]any{}
 	}
 
 	mode := in.Mode
 	if mode == "" {
-		mode = defaultMode
-	}
-	if mode == "" {
-		mode = DefaultMode
+		mode = models.AgentModeDryRun
 	}
 
 	return kafka.AgentRequest{
-		ID:            uuid.NewString(),
-		RequestID:     in.RequestID,
+		RequestID:     uuid.NewString(),
 		CorrelationID: in.CorrelationID,
-		Timestamp:     time.Now().UTC(),
-		Tool:          in.Tool,
-		Arguments:     in.Arguments,
+		Intent:        in.Intent,
+		Payload:       in.Payload,
 		Mode:          mode,
 	}, nil
 }
 
 func (d *Dispatcher) Dispatch(ctx context.Context, in DispatchInput) (kafka.AgentRequest, error) {
-	req, err := BuildRequest(in, d.mode)
+	req, err := BuildRequest(DispatchInput{
+		CorrelationID: in.CorrelationID,
+		Intent:        in.Intent,
+		Payload:       in.Payload,
+		Mode:          d.mode,
+	})
 	if err != nil {
 		return kafka.AgentRequest{}, err
 	}

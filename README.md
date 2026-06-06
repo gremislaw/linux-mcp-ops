@@ -1,69 +1,75 @@
-# linux-mcp-ops
+# redops-orchestrator
 
-MCP-сервер для автоматизации типовых задач с Linux.
+AI Orchestrator для автоматизации типовых задач на RedOS (Группа Московская Биржа).
 
-## Kafka-инфраструктура (задача 1)
+## Архитектура
 
-### Запуск кластера
-
-```bash
-docker-compose up -d
+```
+Telegram Bot → orchestrator.requests → AI Orchestrator → agent.requests
+                                              ↑                ↓
+                                   orchestrator.responses ← agent.responses
 ```
 
-Kafka (KRaft, без Zookeeper) поднимается на `localhost:9092`. Топики создаются автоматически через сервис `kafka-init`:
+Оркестратор **не выполняет** команды в Linux — только маршрутизирует задачи агенту.
 
-| Топик | Назначение | Retention |
-|-------|------------|-----------|
-| `tg.requests` | Входящие запросы от Telegram-бота | 7 дней |
-| `worker.responses` | Ответы воркеров | 7 дней |
-| `worker.dlq` | Dead Letter Queue | 7 дней |
+## Контракты Kafka (согласованы с Bot + Agent)
 
-### Контракты сообщений
+| Топик | Направление | Схема |
+|-------|-------------|-------|
+| `orchestrator.requests` | Bot → Orchestrator | `request_id`, `correlation_id`, `chat_id`, `user_text`, `timestamp` |
+| `agent.requests` | Orchestrator → Agent | `request_id`, `correlation_id`, `intent`, `payload`, `mode` |
+| `agent.responses` | Agent → Orchestrator | `request_id`, `correlation_id`, `status`, `result`, `error` |
+| `orchestrator.responses` | Orchestrator → Bot | `correlation_id`, `chat_id`, `text`, `timestamp` |
+| `orchestrator.dlq` | ошибки | poison pills, validation failures |
 
 JSON Schema: [`schemas/`](schemas/)
 
-- `tg.requests.schema.json` — запрос пользователя
-- `worker.responses.schema.json` — ответ воркера
-- `worker.dlq.schema.json` — сообщение в DLQ после исчерпания retry
-
-OpenAPI-обёртка: `schemas/openapi.yaml`
-
-### Go producer / consumer
-
-Пакет [`internal/kafka`](internal/kafka/):
-
-- **Producer**: `acks=all`, идемпотентный режим, валидация по JSON Schema перед отправкой
-- **Consumer**: `auto.offset.reset=latest`, ручной commit, retry (3 попытки) → DLQ
+## Запуск
 
 ```bash
-go build -o bin/kafka-smoke ./cmd/kafka-smoke
-
-# Терминал 1 — консьюмер
-./bin/kafka-smoke -mode consume
-
-# Терминал 2 — продюсер
-./bin/kafka-smoke -mode produce
+docker-compose up -d          # Kafka + топики
+make build
+./bin/orchestrator            # основной сервис
 ```
 
-### Тестирование
+### Переменные окружения
+
+| Переменная | Default | Описание |
+|------------|---------|----------|
+| `KAFKA_BROKERS` | `localhost:9092` | Брокеры Kafka |
+| `USE_OLLAMA` | `0` | `1` — реальный Ollama вместо stub |
+| `OLLAMA_BASE_URL` | `http://ollama:11434` | Адрес Ollama (K8s) |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | Модель |
+| `OLLAMA_TIMEOUT` | `10s` | Таймаут HTTP к Ollama |
+| `AGENT_WAIT_TIMEOUT` | `60s` | Ожидание ответа агента |
+
+## Тестирование
 
 ```bash
-# Проверка топиков (репликация, retention)
-make kafka-topics
+make test
+make e2e                      # полный цикл с fake agent
 
-# Console producer / consumer
-make kafka-produce
-make kafka-consume
+# Отправить запрос от бота
+./bin/kafka-smoke
 
-# Проверка retry и DLQ: остановить брокер во время consume,
-# затем поднять снова — после 3 retry сообщение попадёт в worker.dlq
-docker-compose stop kafka
-# ... отправить сообщение ...
-docker-compose start kafka
+# Эмуляция ответа агента через 2 сек
+./scripts/fake_agent_response.sh <correlation_id> 2
+
+# Ollama tool calling
+./bin/ollama-smoke -text "Пользователь не заходит по SSH"
 ```
 
-### Остановка
+## Структура
 
-```bash
-docker-compose down -v
+```
+cmd/orchestrator/     — точка входа
+internal/config/      — конфигурация
+internal/models/      — контракты сообщений
+internal/kafka/       — producer/consumer/DLQ
+internal/llm/         — Ollama tool calling
+internal/tracker/     — async request tracker
+internal/router/      — бизнес-логика
+internal/agent/       — диспетчеризация в agent.requests
+internal/botfmt/      — форматирование ответа боту
+schemas/              — JSON Schema
 ```

@@ -6,7 +6,6 @@ import (
 	"redops/internal/kafka"
 )
 
-// RequestTracker хранит ожидающие ответы агента по correlation_id.
 type RequestTracker struct {
 	mu    sync.Mutex
 	waits map[string]chan kafka.AgentResponse

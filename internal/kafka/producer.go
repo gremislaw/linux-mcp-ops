@@ -84,35 +84,27 @@ func (p *Producer) Close() error {
 	return p.producer.Close()
 }
 
-func NewTelegramRequestProducer(brokers []string) (*Producer, error) {
-	return NewProducer(ProducerConfig{
-		Brokers:  brokers,
-		Topic:    TopicTGRequests,
-		Validate: ValidateTelegramRequest,
-	})
-}
-
-func NewWorkerResponseProducer(brokers []string) (*Producer, error) {
-	return NewProducer(ProducerConfig{
-		Brokers:  brokers,
-		Topic:    TopicWorkerResponses,
-		Validate: ValidateWorkerResponse,
-	})
-}
-
-func NewDLQProducer(brokers []string) (*Producer, error) {
-	return NewProducer(ProducerConfig{
-		Brokers:  brokers,
-		Topic:    TopicWorkerDLQ,
-		Validate: ValidateWorkerDLQ,
-	})
-}
-
 func NewOrchestratorRequestProducer(brokers []string) (*Producer, error) {
 	return NewProducer(ProducerConfig{
 		Brokers:  brokers,
 		Topic:    TopicOrchestratorRequests,
 		Validate: ValidateOrchestratorRequest,
+	})
+}
+
+func NewOrchestratorResponseProducer(brokers []string) (*Producer, error) {
+	return NewProducer(ProducerConfig{
+		Brokers:  brokers,
+		Topic:    TopicOrchestratorResponses,
+		Validate: ValidateOrchestratorResponse,
+	})
+}
+
+func NewOrchestratorDLQProducer(brokers []string) (*Producer, error) {
+	return NewProducer(ProducerConfig{
+		Brokers:  brokers,
+		Topic:    TopicOrchestratorDLQ,
+		Validate: ValidateOrchestratorDLQ,
 	})
 }
 
@@ -132,10 +124,7 @@ func NewAgentResponseProducer(brokers []string) (*Producer, error) {
 	})
 }
 
-func NewOrchestratorResponseProducer(brokers []string) (*Producer, error) {
-	return NewProducer(ProducerConfig{
-		Brokers:  brokers,
-		Topic:    TopicOrchestratorResponses,
-		Validate: ValidateOrchestratorResponse,
-	})
+// NewDLQProducer — алиас для orchestrator.dlq (ТЗ).
+func NewDLQProducer(brokers []string) (*Producer, error) {
+	return NewOrchestratorDLQProducer(brokers)
 }

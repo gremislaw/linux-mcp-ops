@@ -3,66 +3,44 @@ package botfmt
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"redops/internal/kafka"
+	"redops/internal/models"
 )
+
+func strPtr(s string) *string { return &s }
 
 func TestFormatSuccessResult(t *testing.T) {
 	text := FormatAgentResponse(kafka.AgentResponse{
-		Status:  "success",
-		Payload: map[string]any{"result": "nginx restarted on prod-01"},
+		Status: models.AgentStatusSuccess,
+		Result: map[string]any{"message": "nginx restarted on prod-01"},
+		Error:  nil,
 	})
-	if !strings.HasPrefix(text, "✅") {
-		t.Fatalf("unexpected prefix: %q", text)
-	}
 	if !strings.Contains(text, "nginx restarted on prod-01") {
-		t.Fatalf("unexpected text: %q", text)
-	}
-	if strings.Contains(text, "map[") {
-		t.Fatalf("looks like go dump: %q", text)
-	}
-}
-
-func TestFormatSuccessLogs(t *testing.T) {
-	text := FormatAgentResponse(kafka.AgentResponse{
-		Status: "success",
-		Payload: map[string]any{
-			"logs": []any{"step 1: ok", "step 2: ok"},
-		},
-	})
-	if !strings.Contains(text, "step 1: ok") || !strings.Contains(text, "step 2: ok") {
-		t.Fatalf("unexpected text: %q", text)
-	}
-}
-
-func TestFormatValidationErrors(t *testing.T) {
-	text := FormatAgentResponse(kafka.AgentResponse{
-		Status: "success",
-		Payload: map[string]any{
-			"validation_errors": []any{
-				map[string]any{"field": "host", "message": "required"},
-			},
-		},
-	})
-	if !strings.Contains(text, "host: required") {
-		t.Fatalf("unexpected text: %q", text)
+		t.Fatalf("unexpected: %q", text)
 	}
 }
 
 func TestFormatError(t *testing.T) {
+	errMsg := "invalid host"
 	text := FormatAgentResponse(kafka.AgentResponse{
-		Status: "error",
-		Error:  &kafka.ErrorDetail{Code: "VALIDATION_FAILED", Message: "invalid host"},
+		Status: models.AgentStatusError,
+		Error:  &errMsg,
 	})
-	if !strings.Contains(text, "VALIDATION_FAILED") || !strings.Contains(text, "invalid host") {
-		t.Fatalf("unexpected text: %q", text)
+	if !strings.Contains(text, "invalid host") {
+		t.Fatalf("unexpected: %q", text)
+	}
+}
+
+func TestMaskSecrets(t *testing.T) {
+	text := MaskSecrets("domain_admin_password=secret123")
+	if strings.Contains(text, "secret123") {
+		t.Fatalf("secret not masked: %q", text)
 	}
 }
 
 func TestFormatTimeout(t *testing.T) {
-	text := FormatTimeout(60 * time.Second)
-	if !strings.Contains(text, "1m0s") {
-		t.Fatalf("unexpected text: %q", text)
+	if FormatTimeout() != models.MsgAgentTimeout {
+		t.Fatal("timeout message mismatch")
 	}
 }

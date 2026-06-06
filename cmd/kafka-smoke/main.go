@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -11,25 +10,26 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/IBM/sarama"
 	"github.com/google/uuid"
 
 	"redops/internal/kafka"
+	"redops/internal/router"
 )
 
 func main() {
 	log.SetOutput(os.Stderr)
 
 	brokers := flag.String("brokers", kafka.DefaultBootstrap, "Kafka bootstrap servers")
-	mode := flag.String("mode", "produce", "Mode: produce or consume")
+	mode := flag.String("mode", "produce-orchestrator", "Mode: produce-orchestrator or consume")
+	intent := flag.String("intent", "execute", "Intent for produce-orchestrator mode")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	switch *mode {
-	case "produce":
-		if err := runProducer(ctx, *brokers); err != nil {
+	case "produce", "produce-orchestrator":
+		if err := runProducer(ctx, *brokers, *intent); err != nil {
 			log.Fatalf("produce failed: %v", err)
 		}
 	case "consume":
@@ -41,21 +41,22 @@ func main() {
 	}
 }
 
-func runProducer(ctx context.Context, brokers string) error {
-	producer, err := kafka.NewTelegramRequestProducer([]string{brokers})
+func runProducer(ctx context.Context, brokers, intent string) error {
+	producer, err := kafka.NewOrchestratorRequestProducer([]string{brokers})
 	if err != nil {
 		return err
 	}
 	defer producer.Close()
 
 	correlationID := uuid.NewString()
-	req := kafka.TelegramRequest{
+	req := kafka.OrchestratorRequest{
 		ID:            uuid.NewString(),
 		CorrelationID: correlationID,
 		Timestamp:     time.Now().UTC(),
+		Intent:        intent,
+		Text:          "restart nginx on prod-01",
 		ChatID:        1001,
 		UserID:        2002,
-		Text:          "smoke test message",
 	}
 
 	partition, offset, err := producer.Send(ctx, correlationID, req)
@@ -63,8 +64,8 @@ func runProducer(ctx context.Context, brokers string) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "sent to %s partition=%d offset=%d correlation_id=%s\n",
-		kafka.TopicTGRequests, partition, offset, correlationID)
+	fmt.Fprintf(os.Stderr, "sent to %s partition=%d offset=%d correlation_id=%s intent=%s\n",
+		kafka.TopicOrchestratorRequests, partition, offset, correlationID, intent)
 	return nil
 }
 
@@ -75,21 +76,22 @@ func runConsumer(ctx context.Context, brokers string) error {
 	}
 	defer dlq.Close()
 
+	agentProducer, err := kafka.NewAgentRequestProducer([]string{brokers})
+	if err != nil {
+		return err
+	}
+	defer agentProducer.Close()
+
+	handler := router.NewHandler(router.StubClient{}, agentProducer)
+
 	consumer, err := kafka.NewConsumer(kafka.ConsumerConfig{
 		Brokers:  []string{brokers},
-		Topic:    kafka.TopicTGRequests,
-		GroupID:  "redops-smoke",
+		Topic:    kafka.TopicOrchestratorRequests,
+		GroupID:  "redops-router",
 		DLQ:      dlq,
 		MaxRetry: 3,
-		Validate: kafka.ValidateTelegramRequest,
-		Handler: func(ctx context.Context, msg *sarama.ConsumerMessage) error {
-			var req kafka.TelegramRequest
-			if err := json.Unmarshal(msg.Value, &req); err != nil {
-				return err
-			}
-			log.Printf("received request id=%s text=%q", req.ID, req.Text)
-			return nil
-		},
+		Validate: kafka.ValidateOrchestratorRequest,
+		Handler:  handler.HandleMessage,
 	})
 	if err != nil {
 		return err

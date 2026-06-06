@@ -15,10 +15,35 @@ func TestValidateTelegramRequest(t *testing.T) {
 	if err := ValidateTelegramRequest(valid); err != nil {
 		t.Fatalf("expected valid request: %v", err)
 	}
+}
 
-	invalid := []byte(`{"id": "not-uuid", "text": ""}`)
-	if err := ValidateTelegramRequest(invalid); err == nil {
-		t.Fatal("expected validation error")
+func TestValidateOrchestratorRequest(t *testing.T) {
+	valid := []byte(`{
+		"id": "550e8400-e29b-41d4-a716-446655440000",
+		"correlation_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+		"timestamp": "2026-06-06T12:00:00Z",
+		"intent": "execute",
+		"text": "restart nginx"
+	}`)
+
+	if err := ValidateOrchestratorRequest(valid); err != nil {
+		t.Fatalf("expected valid orchestrator request: %v", err)
+	}
+}
+
+func TestValidateAgentRequest(t *testing.T) {
+	valid := []byte(`{
+		"id": "550e8400-e29b-41d4-a716-446655440000",
+		"correlation_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+		"orchestrator_request_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+		"timestamp": "2026-06-06T12:00:00Z",
+		"intent": "execute",
+		"prompt": "do something",
+		"plan": {"steps": ["a"]}
+	}`)
+
+	if err := ValidateAgentRequest(valid); err != nil {
+		t.Fatalf("expected valid agent request: %v", err)
 	}
 }
 

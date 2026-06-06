@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/agent.requests.schema.json",
+  "title": "AgentRequest",
+  "description": "Запрос агенту после обработки LLM",
+  "type": "object",
+  "required": [
+    "id",
+    "correlation_id",
+    "orchestrator_request_id",
+    "timestamp",
+    "intent",
+    "prompt",
+    "plan"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "orchestrator_request_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "intent": {
+      "type": "string",
+      "enum": ["execute", "tool_call", "query"]
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

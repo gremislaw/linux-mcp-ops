@@ -107,3 +107,19 @@ func NewDLQProducer(brokers []string) (*Producer, error) {
 		Validate: ValidateWorkerDLQ,
 	})
 }
+
+func NewOrchestratorRequestProducer(brokers []string) (*Producer, error) {
+	return NewProducer(ProducerConfig{
+		Brokers:  brokers,
+		Topic:    TopicOrchestratorRequests,
+		Validate: ValidateOrchestratorRequest,
+	})
+}
+
+func NewAgentRequestProducer(brokers []string) (*Producer, error) {
+	return NewProducer(ProducerConfig{
+		Brokers:  brokers,
+		Topic:    TopicAgentRequests,
+		Validate: ValidateAgentRequest,
+	})
+}

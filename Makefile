@@ -25,7 +25,7 @@ build:
 	go build -o bin/kafka-smoke ./cmd/kafka-smoke
 
 smoke-produce:
-	./bin/kafka-smoke -mode produce
+	./bin/kafka-smoke -mode produce-orchestrator -intent execute
 
 smoke-consume:
 	./bin/kafka-smoke -mode consume

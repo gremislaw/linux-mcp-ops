@@ -38,3 +38,24 @@ type WorkerDLQMessage struct {
 	Error             ErrorDetail    `json:"error"`
 	Message           map[string]any `json:"message"`
 }
+
+type OrchestratorRequest struct {
+	ID            string         `json:"id"`
+	CorrelationID string         `json:"correlation_id"`
+	Timestamp     time.Time      `json:"timestamp"`
+	Intent        string         `json:"intent"`
+	Text          string         `json:"text"`
+	ChatID        int64          `json:"chat_id,omitempty"`
+	UserID        int64          `json:"user_id,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
+}
+
+type AgentRequest struct {
+	ID                    string         `json:"id"`
+	CorrelationID         string         `json:"correlation_id"`
+	OrchestratorRequestID string         `json:"orchestrator_request_id"`
+	Timestamp             time.Time      `json:"timestamp"`
+	Intent                string         `json:"intent"`
+	Prompt                string         `json:"prompt"`
+	Plan                  map[string]any `json:"plan"`
+}

@@ -11,9 +11,11 @@ import (
 )
 
 var (
-	telegramRequestSchema *jsonschema.Schema
-	workerResponseSchema  *jsonschema.Schema
-	workerDLQSchema       *jsonschema.Schema
+	telegramRequestSchema      *jsonschema.Schema
+	orchestratorRequestSchema  *jsonschema.Schema
+	agentRequestSchema         *jsonschema.Schema
+	workerResponseSchema       *jsonschema.Schema
+	workerDLQSchema            *jsonschema.Schema
 )
 
 func init() {
@@ -21,9 +23,11 @@ func init() {
 	compiler.Draft = jsonschema.Draft2020
 
 	entries := map[string]**jsonschema.Schema{
-		"tg.requests":      &telegramRequestSchema,
-		"worker.responses": &workerResponseSchema,
-		"worker.dlq":       &workerDLQSchema,
+		"tg.requests":           &telegramRequestSchema,
+		"orchestrator.requests": &orchestratorRequestSchema,
+		"agent.requests":        &agentRequestSchema,
+		"worker.responses":      &workerResponseSchema,
+		"worker.dlq":            &workerDLQSchema,
 	}
 
 	for topic, target := range entries {
@@ -44,6 +48,14 @@ func init() {
 
 func ValidateTelegramRequest(data []byte) error {
 	return validate(telegramRequestSchema, data)
+}
+
+func ValidateOrchestratorRequest(data []byte) error {
+	return validate(orchestratorRequestSchema, data)
+}
+
+func ValidateAgentRequest(data []byte) error {
+	return validate(agentRequestSchema, data)
 }
 
 func ValidateWorkerResponse(data []byte) error {

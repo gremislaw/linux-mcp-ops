@@ -7,6 +7,8 @@ RETENTION_MS=604800000 # 7 days
 
 topics=(
   "tg.requests"
+  "orchestrator.requests"
+  "agent.requests"
   "worker.responses"
   "worker.dlq"
 )

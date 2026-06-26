@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/orchestrator.requests.schema.json",
+  "title": "OrchestratorRequest",
+  "description": "Входящий запрос от Telegram-бота",
+  "type": "object",
+  "required": ["request_id", "correlation_id", "chat_id", "user_text", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "chat_id": {
+      "type": "integer"
+    },
+    "user_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+openapi: 3.1.0
+info:
+  title: RedOps Kafka Message Contracts
+  version: 1.0.0
+  description: Контракты сообщений для топиков tg.requests, worker.responses, worker.dlq
+
+components:
+  schemas:
+    TelegramRequest:
+      $ref: tg.requests.schema.json
+    WorkerResponse:
+      $ref: worker.responses.schema.json
+    WorkerDLQMessage:
+      $ref: worker.dlq.schema.json
+
+paths: {}

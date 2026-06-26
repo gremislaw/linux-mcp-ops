@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/agent.responses.schema.json",
+  "title": "AgentResponse",
+  "description": "Ответ Linux Agent",
+  "type": "object",
+  "required": ["request_id", "correlation_id", "status", "result", "error"],
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "error", "validation_error"]
+    },
+    "result": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "error": {
+      "type": ["string", "null"]
+    }
+  }
+}

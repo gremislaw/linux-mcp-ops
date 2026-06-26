@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/tools/diagnose_auth.schema.json",
+  "title": "diagnose_auth",
+  "description": "Диагностика проблем SSH-аутентификации и доступа к хосту",
+  "type": "object",
+  "required": ["host"],
+  "additionalProperties": false,
+  "properties": {
+    "host": {
+      "type": "string",
+      "description": "Имя хоста или IP-адрес сервера"
+    },
+    "username": {
+      "type": "string",
+      "description": "Имя пользователя SSH"
+    },
+    "symptom": {
+      "type": "string",
+      "description": "Описание симптома (permission denied, connection refused и т.д.)"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/orchestrator.dlq.schema.json",
+  "title": "OrchestratorDLQMessage",
+  "type": "object",
+  "required": ["id", "correlation_id", "failed_at", "error_code", "error_message", "original_topic", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "correlation_id": { "type": "string", "format": "uuid" },
+    "request_id": { "type": "string", "format": "uuid" },
+    "failed_at": { "type": "string", "format": "date-time" },
+    "error_code": { "type": "string" },
+    "error_message": { "type": "string" },
+    "original_topic": { "type": "string" },
+    "message": { "type": "object", "additionalProperties": true }
+  }
+}

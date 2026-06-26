@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/orchestrator.responses.schema.json",
+  "title": "OrchestratorResponse",
+  "description": "Итоговый ответ оркестратора для Telegram-бота",
+  "type": "object",
+  "required": ["correlation_id", "chat_id", "text", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "chat_id": {
+      "type": "integer"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

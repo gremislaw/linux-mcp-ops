@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redops.local/schemas/agent.requests.schema.json",
+  "title": "AgentRequest",
+  "description": "Задача для Linux Agent после обработки LLM",
+  "type": "object",
+  "required": ["request_id", "correlation_id", "intent", "payload", "mode"],
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID для трекинга внутри системы"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "ID трассировки от бота"
+    },
+    "intent": {
+      "type": "string",
+      "enum": ["diagnose_auth", "setup_workstation"]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["dry-run", "exec"],
+      "default": "dry-run"
+    }
+  }
+}
